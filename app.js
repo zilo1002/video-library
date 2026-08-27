@@ -1,9 +1,10 @@
 const CONFIG={
 DB_NAME:'VideoLibraryDB',
-DB_VERSION:2,
+DB_VERSION:3,
 STORE:'library',
 DB_KEY:'videoLib_v1',
 CAT_KEY:'videoLib_cats_v1',
+VIEW_KEY:'videoLib_view_v1',
 DEFAULT_CATS:['全部','未分类','教程','电影','音乐','其他'],
 ICONS:{
 '全部':'📁',
@@ -27,7 +28,8 @@ objectUrls:new Map(),
 currentPlayerId:null,
 selectedIds:new Set(),
 batchMode:false,
-hideUploadedDuplicates:false
+hideUploadedDuplicates:false,
+view:'grid'
 };
 
 const IDB={
@@ -37,10 +39,14 @@ open(){
 return new Promise((resolve,reject)=>{
 if(this.db)return resolve(this.db);
 
-const r=indexedDB.open(CONFIG.DB_NAME,CONFIG.DB_VERSION);
+const r=indexedDB.open(
+CONFIG.DB_NAME,
+CONFIG.DB_VERSION
+);
 
 r.onupgradeneeded=e=>{
 const db=e.target.result;
+
 if(!db.objectStoreNames.contains(CONFIG.STORE)){
 db.createObjectStore(CONFIG.STORE);
 }
@@ -48,77 +54,192 @@ db.createObjectStore(CONFIG.STORE);
 
 r.onsuccess=e=>{
 this.db=e.target.result;
+
 this.db.onversionchange=()=>{
 this.db.close();
 this.db=null;
 };
+
 resolve(this.db);
 };
 
 r.onerror=()=>{
-reject(r.error||new Error('IndexedDB 打开失败'));
+reject(
+r.error||
+new Error('IndexedDB 打开失败')
+);
 };
 });
 },
 
 get(key){
-return this.open().then(db=>new Promise((res,rej)=>{
-const r=db.transaction(CONFIG.STORE,'readonly')
+return this.open().then(
+db=>new Promise((res,rej)=>{
+const r=
+db.transaction(
+CONFIG.STORE,
+'readonly'
+)
 .objectStore(CONFIG.STORE)
 .get(key);
 
-r.onsuccess=()=>res(r.result);
-r.onerror=()=>rej(r.error);
-}));
+r.onsuccess=()=>{
+res(r.result);
+};
+
+r.onerror=()=>{
+rej(r.error);
+};
+})
+);
 },
 
 set(key,value){
-return this.open().then(db=>new Promise((res,rej)=>{
-const tx=db.transaction(CONFIG.STORE,'readwrite');
+return this.open().then(
+db=>new Promise((res,rej)=>{
+const tx=
+db.transaction(
+CONFIG.STORE,
+'readwrite'
+);
 
-tx.objectStore(CONFIG.STORE).put(value,key);
+tx.objectStore(CONFIG.STORE)
+.put(value,key);
 
-tx.oncomplete=()=>res();
+tx.oncomplete=()=>{
+res();
+};
 
 tx.onerror=()=>{
-rej(tx.error||new Error('IndexedDB 写入失败'));
+rej(
+tx.error||
+new Error('IndexedDB 写入失败')
+);
 };
 
 tx.onabort=()=>{
-rej(tx.error||new Error('IndexedDB 写入中止'));
+rej(
+tx.error||
+new Error('IndexedDB 写入中止')
+);
 };
-}));
+})
+);
 }
 };
 
 function escapeHtml(s=''){
 const d=document.createElement('div');
+
 d.textContent=String(s);
+
 return d.innerHTML;
 }
 
 function formatSize(n=0){
-if(n<1024)return n+' B';
-if(n<1048576)return(n/1024).toFixed(1)+' KB';
-if(n<1073741824)return(n/1048576).toFixed(2)+' MB';
-return(n/1073741824).toFixed(2)+' GB';
+
+n=Number(n)||0;
+
+if(n<1024){
+return n+' B';
+}
+
+if(n<1048576){
+return(
+n/1024
+).toFixed(1)+' KB';
+}
+
+if(n<1073741824){
+return(
+n/1048576
+).toFixed(2)+' MB';
+}
+
+return(
+n/1073741824
+).toFixed(2)+' GB';
 }
 
 function formatDate(ts){
+
 const d=new Date(ts);
-return `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
+
+if(Number.isNaN(d.getTime())){
+return '未知日期';
+}
+
+return `${
+d.getMonth()+1
+}/${
+d.getDate()
+} ${
+String(
+d.getHours()
+).padStart(2,'0')
+}:${
+String(
+d.getMinutes()
+).padStart(2,'0')
+}`;
+}
+
+function formatFullDate(ts){
+
+const d=new Date(ts);
+
+if(Number.isNaN(d.getTime())){
+return '未知日期';
+}
+
+return d.toLocaleString();
 }
 
 function icon(c){
 return CONFIG.ICONS[c]||'🏷️';
 }
 
+function normalizeTags(tags){
+
+if(Array.isArray(tags)){
+return[
+...new Set(
+tags
+.map(x=>String(x).trim())
+.filter(Boolean)
+)
+];
+}
+
+if(typeof tags==='string'){
+return[
+...new Set(
+tags
+.split(/[,，、]/)
+.map(x=>x.trim())
+.filter(Boolean)
+)
+];
+}
+
+return[];
+}
+
+function tagsToText(tags){
+return normalizeTags(tags).join('、');
+}
+
 function toast(msg,type='success'){
-const t=document.getElementById('toast');
+
+const t=
+document.getElementById('toast');
+
 if(!t)return;
 
 t.textContent=msg;
-t.className=`toast ${type} show`;
+
+t.className=
+`toast ${type} show`;
 
 clearTimeout(toast.timer);
 
@@ -128,21 +249,33 @@ t.classList.remove('show');
 }
 
 function openModal(id){
-document.getElementById(id)?.classList.add('active');
+document
+.getElementById(id)
+?.classList.add('active');
 }
 
 function closeModal(id){
-const el=document.getElementById(id);
+
+const el=
+document.getElementById(id);
+
 if(!el)return;
 
 el.classList.remove('active');
 
 if(id==='playerModal'){
-const v=document.getElementById('playerVideo');
+
+const v=
+document.getElementById(
+'playerVideo'
+);
 
 if(v){
+
 v.pause();
+
 v.removeAttribute('src');
+
 v.load();
 }
 
@@ -151,39 +284,71 @@ state.currentPlayerId=null;
 }
 
 function closeSidebar(){
-document.getElementById('sidebar')?.classList.remove('open');
-document.getElementById('sidebarOverlay')?.classList.remove('active');
+
+document
+.getElementById('sidebar')
+?.classList.remove('open');
+
+document
+.getElementById('sidebarOverlay')
+?.classList.remove('active');
 }
 
 function toggleSidebar(){
-document.getElementById('sidebar')?.classList.toggle('open');
-document.getElementById('sidebarOverlay')?.classList.toggle('active');
+
+document
+.getElementById('sidebar')
+?.classList.toggle('open');
+
+document
+.getElementById('sidebarOverlay')
+?.classList.toggle('active');
 }
 
 function asBlob(v){
+
 if(!v)return null;
 
 try{
-if(v.blob instanceof Blob)return v.blob;
+
+if(v.blob instanceof Blob){
+return v.blob;
+}
 
 if(v.blob){
+
 return new Blob(
 [v.blob],
-{type:v.type||'video/mp4'}
+{
+type:
+v.type||
+'video/mp4'
+}
 );
 }
 
 if(v.buffer instanceof ArrayBuffer){
+
 return new Blob(
 [v.buffer],
-{type:v.type||'video/mp4'}
+{
+type:
+v.type||
+'video/mp4'
+}
 );
 }
 
-if(typeof v.data==='string'&&v.data.startsWith('data:')){
+if(
+typeof v.data==='string'&&
+v.data.startsWith('data:')
+){
+
 return dataURLToBlob(v.data);
 }
+
 }catch(e){
+
 console.error(e);
 }
 
@@ -191,10 +356,13 @@ return null;
 }
 
 function videoUrl(v){
+
 const b=asBlob(v);
+
 if(!b)return '';
 
 if(!state.objectUrls.has(v.id)){
+
 state.objectUrls.set(
 v.id,
 URL.createObjectURL(b)
@@ -205,19 +373,92 @@ return state.objectUrls.get(v.id);
 }
 
 function revoke(id){
-const u=state.objectUrls.get(id);
+
+const u=
+state.objectUrls.get(id);
 
 if(u){
+
 URL.revokeObjectURL(u);
+
 state.objectUrls.delete(id);
 }
 }
 
-async function loadData(){
-try{
-const c=localStorage.getItem(CONFIG.CAT_KEY);
+function loadView(){
 
-state.cats=c
+try{
+
+const saved=
+localStorage.getItem(
+CONFIG.VIEW_KEY
+);
+
+if(
+saved==='grid'||
+saved==='timeline'||
+saved==='tags'
+){
+
+state.view=saved;
+
+}
+
+}catch{}
+
+}
+
+function saveView(){
+
+try{
+
+localStorage.setItem(
+CONFIG.VIEW_KEY,
+state.view
+);
+
+}catch{}
+}
+
+function setView(view){
+
+if(
+!['grid','timeline','tags']
+.includes(view)
+){
+return;
+}
+
+state.view=view;
+
+saveView();
+
+document
+.querySelectorAll('.view-btn')
+.forEach(btn=>{
+
+btn.classList.toggle(
+'active',
+btn.dataset.view===view
+);
+});
+
+renderVideos();
+}
+
+function loadData(){
+
+return (async()=>{
+
+try{
+
+const c=
+localStorage.getItem(
+CONFIG.CAT_KEY
+);
+
+state.cats=
+c
 ?JSON.parse(c)
 :[...CONFIG.DEFAULT_CATS];
 
@@ -226,65 +467,113 @@ if(
 !state.cats.includes('全部')||
 !state.cats.includes('未分类')
 ){
-state.cats=[...CONFIG.DEFAULT_CATS];
+
+state.cats=[
+...CONFIG.DEFAULT_CATS
+];
 }
+
 }catch{
-state.cats=[...CONFIG.DEFAULT_CATS];
+
+state.cats=[
+...CONFIG.DEFAULT_CATS
+];
+
 }
 
 try{
-const d=await IDB.get(CONFIG.DB_KEY);
+
+const d=
+await IDB.get(
+CONFIG.DB_KEY
+);
 
 state.data=
-d&&Array.isArray(d.videos)
+d&&
+Array.isArray(d.videos)
 ?d
 :{videos:[]};
 
 state.data.videos.forEach(v=>{
-if(!v.type)v.type='video/mp4';
+
+if(!v.type){
+v.type='video/mp4';
+}
 
 if(!v.size){
+
 const b=asBlob(v);
-if(b)v.size=b.size;
+
+if(b){
+v.size=b.size;
 }
+}
+
+v.tags=normalizeTags(
+v.tags
+);
+
 });
 
 renderCats();
+
 renderVideos();
+
 updateStorage();
+
 updateBatchBar();
 
 }catch(e){
+
 console.error(e);
 
-state.data={videos:[]};
+state.data={
+videos:[]
+};
 
 renderCats();
+
 renderVideos();
 
 toast(
-'视频库加载失败：'+e.message,
+'视频库加载失败：'+
+e.message,
 'error'
 );
+
 }
+
+})();
+
 }
 
 function saveCats(){
+
 try{
+
 localStorage.setItem(
 CONFIG.CAT_KEY,
 JSON.stringify(state.cats)
 );
 
 return true;
+
 }catch{
-toast('分类保存失败','error');
+
+toast(
+'分类保存失败',
+'error'
+);
+
 return false;
 }
+
 }
 
 async function saveVideos(){
+
 try{
+
 await IDB.set(
 CONFIG.DB_KEY,
 state.data
@@ -293,42 +582,68 @@ state.data
 await updateStorage();
 
 return true;
+
 }catch(e){
+
 toast(
-'视频保存失败：'+e.message,
+'视频保存失败：'+
+e.message,
 'error'
 );
 
 return false;
 }
+
 }
 
 async function updateStorage(){
+
 let used=0;
 
-for(const v of state.data.videos){
+for(
+const v of state.data.videos
+){
+
 const b=asBlob(v);
 
-used+=b
+used+=
+b
 ?b.size
 :Number(v.size)||0;
 }
 
-const text=document.getElementById('storageText');
+const text=
+document.getElementById(
+'storageText'
+);
 
 if(text){
+
 text.textContent=
-`视频占用 ${formatSize(used)} · ${state.data.videos.length} 个`;
+`视频占用 ${
+formatSize(used)
+} · ${
+state.data.videos.length
+} 个`;
 }
 
 try{
-const q=await navigator.storage?.estimate?.();
 
-const quota=q?.quota||0;
+const q=
+await navigator
+.storage
+?.estimate?.();
 
-const fill=document.getElementById('storageFill');
+const quota=
+q?.quota||0;
+
+const fill=
+document.getElementById(
+'storageFill'
+);
 
 if(fill){
+
 const den=
 quota||
 Math.max(
@@ -344,165 +659,253 @@ used/den*100
 
 fill.classList.toggle(
 'warning',
-!!quota&&used/quota>.7
+!!quota&&
+used/quota>.7
 );
 
 fill.classList.toggle(
 'danger',
-!!quota&&used/quota>.9
+!!quota&&
+used/quota>.9
 );
 }
+
 }catch{}
+
 }
 
 function renderCats(){
-const list=document.getElementById('catList');
+
+const list=
+document.getElementById(
+'catList'
+);
+
 if(!list)return;
 
 list.innerHTML='';
 
 state.cats.forEach(c=>{
+
 const count=
 c==='全部'
 ?state.data.videos.length
 :state.data.videos.filter(
-v=>(v.category||'未分类')===c
+v=>
+(v.category||'未分类')===c
 ).length;
 
-const d=document.createElement('div');
+const d=
+document.createElement('div');
 
 d.className=
 'cat-item'+
-(c===state.currentCat?' active':'');
+(
+c===state.currentCat
+?' active'
+:''
+);
 
 d.innerHTML=`
-<span class="cat-icon">${icon(c)}</span>
-<span class="cat-name">${escapeHtml(c)}</span>
-<span class="cat-count">${count}</span>
+<span class="cat-icon">
+${icon(c)}
+</span>
+
+<span class="cat-name">
+${escapeHtml(c)}
+</span>
+
+<span class="cat-count">
+${count}
+</span>
+
 ${
-c!=='全部'&&c!=='未分类'
-?'<button class="cat-del-btn" title="删除分类">−</button>'
+c!=='全部'&&
+c!=='未分类'
+?
+'<button class="cat-del-btn" title="删除分类">−</button>'
 :''
 }
 `;
 
-d.addEventListener('click',e=>{
-if(!e.target.closest('.cat-del-btn')){
+d.addEventListener(
+'click',
+e=>{
+
+if(
+!e.target.closest(
+'.cat-del-btn'
+)
+){
+
 switchCat(c);
 }
-});
+}
+);
 
-d.querySelector('.cat-del-btn')
-?.addEventListener('click',e=>{
+d.querySelector(
+'.cat-del-btn'
+)?.addEventListener(
+'click',
+e=>{
+
 e.stopPropagation();
+
 deleteCat(c);
-});
+}
+);
 
 list.appendChild(d);
+
 });
+
 }
 
 function switchCat(c){
+
 state.currentCat=c;
+
 state.selectedIds.clear();
 
-document.getElementById('pageTitle').textContent=
+const title=
+document.getElementById(
+'pageTitle'
+);
+
+if(title){
+
+title.textContent=
 c==='全部'
 ?'全部视频'
 :c;
+}
 
 renderCats();
+
 renderVideos();
+
 updateBatchBar();
+
 closeSidebar();
+
 }
 
 function getCurrentVideos(){
+
 return state.currentCat==='全部'
 ?state.data.videos
 :state.data.videos.filter(
-v=>(v.category||'未分类')===state.currentCat
+v=>
+(v.category||'未分类')===
+state.currentCat
 );
+
 }
 
-function renderVideos(){
-const box=document.getElementById('content');
+function getSortedVideos(){
 
-if(!box)return;
+return[
+...getCurrentVideos()
+].sort(
+(a,b)=>
+Number(b.createdAt||0)-
+Number(a.createdAt||0)
+);
 
-const vs=getCurrentVideos();
+}
 
-if(!vs.length){
-box.innerHTML=`
-<div class="empty-state">
-<div class="empty-icon">🎬</div>
-<h3>暂无视频</h3>
-<p>点击右上角「上传视频」添加视频</p>
+function createTagElement(tag){
+
+const span=
+document.createElement('span');
+
+span.className='video-tag';
+
+span.textContent=
+'#'+tag;
+
+return span;
+}
+
+function renderTags(tags){
+
+const arr=
+normalizeTags(tags);
+
+if(!arr.length){
+return '';
+}
+
+return`
+<div class="video-tags">
+${
+arr.map(tag=>
+`<span class="video-tag">
+#${escapeHtml(tag)}
+</span>`
+).join('')
+}
 </div>
 `;
 
-updateBatchBar();
-return;
 }
 
-const grid=document.createElement('div');
+function renderVideoCard(v){
 
-grid.className='video-grid';
+const card=
+document.createElement('div');
 
-vs.slice().reverse().forEach(v=>{
-const card=document.createElement('div');
+card.className=
+'video-card';
 
-card.className='video-card';
+const src=
+videoUrl(v);
 
-const src=videoUrl(v);
-const thumb=v.thumbnail||'';
+const thumb=
+v.thumbnail||'';
 
 const checked=
 state.selectedIds.has(v.id);
 
 card.innerHTML=`
+
 <div class="video-thumb">
 
 ${
 thumb
-?`<img src="${thumb}" alt="视频缩略图">`
+?
+`<img
+src="${escapeHtml(thumb)}"
+alt="视频缩略图"
+>`
 :
 (
 src
-?'<video muted playsinline preload="metadata"></video>'
-:'<div class="thumb-placeholder">🎬</div>'
+?
+'<video muted playsinline preload="metadata"></video>'
+:
+'<div class="thumb-placeholder">🎬</div>'
 )
 }
 
-<div class="play-icon">▶</div>
+<div class="play-icon">
+▶
+</div>
 
 <button
 class="delete-btn"
 title="删除视频"
->×</button>
+>
+×
+</button>
 
 <label
 class="video-select"
 title="选择视频"
-style="
-position:absolute;
-top:8px;
-left:8px;
-z-index:4;
-width:30px;
-height:30px;
-border-radius:8px;
-background:rgba(0,0,0,.65);
-display:flex;
-align-items:center;
-justify-content:center;
-cursor:pointer;
-"
 >
 <input
 type="checkbox"
 ${checked?'checked':''}
-style="width:18px;height:18px;cursor:pointer"
 >
 </label>
 
@@ -526,27 +929,37 @@ ${escapeHtml(v.name)}
 ${escapeHtml(v.category||'未分类')}
 </span>
 
+${renderTags(v.tags)}
+
 </div>
 `;
 
 const vid=
-card.querySelector('.video-thumb video');
+card.querySelector(
+'.video-thumb video'
+);
 
 if(vid&&src){
+
 vid.src=src;
 
 vid.addEventListener(
 'loadedmetadata',
 ()=>{
+
 try{
+
 vid.currentTime=
 Math.min(
 .1,
 vid.duration||0
 );
+
 }catch{}
+
 }
 );
+
 }
 
 const checkbox=
@@ -554,61 +967,318 @@ card.querySelector(
 '.video-select input'
 );
 
-checkbox.addEventListener(
+checkbox?.addEventListener(
 'click',
 e=>{
 e.stopPropagation();
-});
+}
+);
 
-checkbox.addEventListener(
+checkbox?.addEventListener(
 'change',
 e=>{
+
 e.stopPropagation();
 
 if(e.target.checked){
+
 state.selectedIds.add(v.id);
+
 }else{
+
 state.selectedIds.delete(v.id);
+
 }
 
 updateBatchBar();
+
 renderVideos();
-});
+
+}
+);
 
 card.addEventListener(
 'click',
 e=>{
+
 if(
 e.target.closest('.delete-btn')||
 e.target.closest('.video-select')
 ){
+
 return;
 }
 
 playVideo(v);
-});
+
+}
+);
 
 card.querySelector(
 '.delete-btn'
-).addEventListener(
+)?.addEventListener(
 'click',
 e=>{
+
 e.stopPropagation();
+
 deleteVideo(v.id);
+
+}
+);
+
+return card;
+
+}
+
+function renderGrid(videos){
+
+const grid=
+document.createElement('div');
+
+grid.className=
+'video-grid';
+
+videos.forEach(v=>{
+
+grid.appendChild(
+renderVideoCard(v)
+);
+
 });
 
-grid.appendChild(card);
+return grid;
+
+}
+
+function renderTimeline(videos){
+
+const wrap=
+document.createElement('div');
+
+wrap.className=
+'timeline-view';
+
+let lastDate='';
+
+videos.forEach(v=>{
+
+const d=
+new Date(v.createdAt);
+
+const dateKey=
+Number.isNaN(d.getTime())
+?'未知日期'
+:
+`${d.getFullYear()}-${String(
+d.getMonth()+1
+).padStart(2,'0')}-${String(
+d.getDate()
+).padStart(2,'0')}`;
+
+if(dateKey!==lastDate){
+
+const group=
+document.createElement('div');
+
+group.className=
+'timeline-date';
+
+group.innerHTML=`
+<div class="timeline-dot"></div>
+<div class="timeline-date-text">
+${escapeHtml(dateKey)}
+</div>
+`;
+
+wrap.appendChild(group);
+
+lastDate=dateKey;
+}
+
+const item=
+document.createElement('div');
+
+item.className=
+'timeline-item';
+
+const card=
+renderVideoCard(v);
+
+item.appendChild(card);
+
+wrap.appendChild(item);
+
 });
 
-box.replaceChildren(grid);
+return wrap;
+
+}
+
+function renderTagGroups(videos){
+
+const wrap=
+document.createElement('div');
+
+wrap.className=
+'tag-groups-view';
+
+const groups=
+new Map();
+
+videos.forEach(v=>{
+
+const tags=
+normalizeTags(v.tags);
+
+if(!tags.length){
+
+if(!groups.has('无标签')){
+groups.set('无标签',[]);
+}
+
+groups.get('无标签').push(v);
+
+return;
+}
+
+tags.forEach(tag=>{
+
+if(!groups.has(tag)){
+groups.set(tag,[]);
+}
+
+groups.get(tag).push(v);
+
+});
+
+});
+
+const sortedGroups=
+[...groups.entries()]
+.sort(
+(a,b)=>
+b[1].length-a[1].length||
+a[0].localeCompare(
+b[0],
+'zh-CN'
+)
+);
+
+sortedGroups.forEach(
+([tag,items])=>{
+
+const section=
+document.createElement('section');
+
+section.className=
+'tag-group';
+
+const header=
+document.createElement('div');
+
+header.className=
+'tag-group-header';
+
+header.innerHTML=`
+<div>
+<span class="tag-group-title">
+${
+tag==='无标签'
+?'📁 无标签'
+:'#'+escapeHtml(tag)
+}
+</span>
+
+<span class="tag-group-count">
+${items.length}
+</span>
+</div>
+`;
+
+section.appendChild(header);
+
+section.appendChild(
+renderGrid(items)
+);
+
+wrap.appendChild(section);
+
+});
+
+return wrap;
+
+}
+
+function renderVideos(){
+
+const box=
+document.getElementById(
+'content'
+);
+
+if(!box)return;
+
+const vs=
+getSortedVideos();
+
+if(!vs.length){
+
+box.innerHTML=`
+<div class="empty-state">
+
+<div class="empty-icon">
+🎬
+</div>
+
+<h3>
+暂无视频
+</h3>
+
+<p>
+点击右上角「上传视频」添加视频
+</p>
+
+</div>
+`;
 
 updateBatchBar();
+
+return;
+}
+
+let view;
+
+if(state.view==='timeline'){
+
+view=
+renderTimeline(vs);
+
+}else if(state.view==='tags'){
+
+view=
+renderTagGroups(vs);
+
+}else{
+
+view=
+renderGrid(vs);
+
+}
+
+box.replaceChildren(view);
+
+updateBatchBar();
+
 }
 
 function playVideo(v){
-const src=videoUrl(v);
+
+const src=
+videoUrl(v);
 
 if(!src){
+
 return toast(
 '视频文件数据不存在',
 'error'
@@ -616,64 +1286,104 @@ return toast(
 }
 
 const video=
-document.getElementById('playerVideo');
+document.getElementById(
+'playerVideo'
+);
 
-state.currentPlayerId=v.id;
+state.currentPlayerId=
+v.id;
 
 video.onerror=()=>{
+
 toast(
 '这个 MP4 无法由当前浏览器解码。文件本身未被修改。',
 'error'
 );
+
 };
 
 video.src=src;
+
 video.load();
 
 document.getElementById(
 'playerTitle'
-).textContent=v.name;
+).textContent=
+v.name;
 
 document.getElementById(
 'playerMeta'
 ).textContent=
-`${v.category||'未分类'} · ${formatSize(v.size)} · ${new Date(v.createdAt).toLocaleString()}`;
+`${
+v.category||'未分类'
+} · ${
+formatSize(v.size)
+} · ${
+formatFullDate(v.createdAt)
+}`;
+
+const tagBox=
+document.getElementById(
+'playerTags'
+);
+
+if(tagBox){
+
+tagBox.innerHTML=
+renderTags(v.tags);
+}
 
 openModal('playerModal');
 
 video.play().catch(()=>{});
+
 }
 
 function downloadVideo(v){
-const b=asBlob(v);
+
+const b=
+asBlob(v);
 
 if(!b){
+
 return toast(
 '找不到原视频文件',
 'error'
 );
 }
 
-const u=URL.createObjectURL(b);
+const u=
+URL.createObjectURL(b);
 
-const a=document.createElement('a');
+const a=
+document.createElement('a');
 
 a.href=u;
-a.download=v.name||'video.mp4';
+
+a.download=
+v.name||
+'video.mp4';
 
 document.body.appendChild(a);
+
 a.click();
+
 a.remove();
 
 setTimeout(()=>{
 URL.revokeObjectURL(u);
 },1500);
+
 }
 
 async function downloadSelectedVideos(){
-const ids=[...state.selectedIds];
+
+const ids=[
+...state.selectedIds
+];
 
 if(!ids.length){
+
 return toast(
 '请先选择视频',
 'error'
@@ -686,37 +1396,51 @@ v=>ids.includes(v.id)
 );
 
 if(videos.length===1){
-downloadVideo(videos[0]);
+
+downloadVideo(
+videos[0]
+);
+
 return;
 }
 
 let success=0;
 
 for(const v of videos){
+
 const b=asBlob(v);
 
 if(!b)continue;
 
-const u=URL.createObjectURL(b);
+const u=
+URL.createObjectURL(b);
 
-const a=document.createElement('a');
+const a=
+document.createElement('a');
 
 a.href=u;
-a.download=v.name||'video.mp4';
+
+a.download=
+v.name||
+'video.mp4';
 
 document.body.appendChild(a);
+
 a.click();
+
 a.remove();
 
 success++;
 
 await new Promise(
-resolve=>setTimeout(resolve,180)
+resolve=>
+setTimeout(resolve,180)
 );
 
 setTimeout(()=>{
 URL.revokeObjectURL(u);
 },1500);
+
 }
 
 toast(
@@ -724,40 +1448,65 @@ toast(
 );
 
 state.selectedIds.clear();
+
 renderVideos();
+
 updateBatchBar();
+
 }
 
 async function deleteVideo(id){
-if(!confirm('确定删除这个视频？'))return;
 
-const old=state.data.videos;
+if(
+!confirm(
+'确定删除这个视频？'
+)
+){
+return;
+}
+
+const old=
+state.data.videos;
 
 state.data.videos=
-old.filter(v=>v.id!==id);
+old.filter(
+v=>v.id!==id
+);
 
-if(await saveVideos()){
+if(
+await saveVideos()
+){
 
 revoke(id);
 
 state.selectedIds.delete(id);
 
 renderCats();
+
 renderVideos();
+
 updateBatchBar();
 
-toast('视频已删除');
+toast(
+'视频已删除'
+);
 
 }else{
 
 state.data.videos=old;
+
 }
+
 }
 
 async function deleteSelectedVideos(){
-const ids=[...state.selectedIds];
+
+const ids=[
+...state.selectedIds
+];
 
 if(!ids.length){
+
 return toast(
 '请先选择视频',
 'error'
@@ -771,24 +1520,31 @@ if(
 `确定删除选中的 ${count} 个视频？`
 )
 ){
+
 return;
 }
 
-const oldVideos=state.data.videos;
+const oldVideos=
+state.data.videos;
 
 state.data.videos=
 oldVideos.filter(
-v=>!state.selectedIds.has(v.id)
+v=>
+!state.selectedIds.has(v.id)
 );
 
-if(await saveVideos()){
+if(
+await saveVideos()
+){
 
 ids.forEach(id=>revoke(id));
 
 state.selectedIds.clear();
 
 renderCats();
+
 renderVideos();
+
 updateBatchBar();
 
 toast(
@@ -797,12 +1553,17 @@ toast(
 
 }else{
 
-state.data.videos=oldVideos;
+state.data.videos=
+oldVideos;
+
 }
+
 }
 
 function selectAllCurrent(){
-const videos=getCurrentVideos();
+
+const videos=
+getCurrentVideos();
 
 if(!videos.length)return;
 
@@ -814,29 +1575,39 @@ v=>state.selectedIds.has(v.id)
 if(allSelected){
 
 videos.forEach(
-v=>state.selectedIds.delete(v.id)
+v=>
+state.selectedIds.delete(v.id)
 );
 
 }else{
 
 videos.forEach(
-v=>state.selectedIds.add(v.id)
+v=>
+state.selectedIds.add(v.id)
 );
+
 }
 
 renderVideos();
+
 updateBatchBar();
+
 }
 
 function clearSelection(){
+
 state.selectedIds.clear();
 
 renderVideos();
+
 updateBatchBar();
+
 }
 
 function updateBatchBar(){
-let bar=document.getElementById(
+
+let bar=
+document.getElementById(
 'batchActionBar'
 );
 
@@ -848,42 +1619,21 @@ getCurrentVideos();
 
 if(!bar){
 
-bar=document.createElement('div');
+bar=
+document.createElement('div');
 
-bar.id='batchActionBar';
-
-bar.style.cssText=`
-position:fixed;
-left:50%;
-bottom:22px;
-transform:translateX(-50%);
-z-index:90;
-display:none;
-align-items:center;
-gap:8px;
-padding:10px 12px;
-background:#242424;
-border:1px solid #444;
-border-radius:12px;
-box-shadow:0 8px 30px rgba(0,0,0,.45);
-max-width:calc(100vw - 24px);
-`;
+bar.id=
+'batchActionBar';
 
 bar.innerHTML=`
+
 <span
 id="batchCount"
-style="
-font-size:13px;
-color:#e0e0e0;
-white-space:nowrap;
-margin-right:4px;
-"
 ></span>
 
 <button
 id="batchSelectAll"
 class="btn btn-secondary"
-style="padding:7px 10px;font-size:12px"
 >
 全选
 </button>
@@ -891,7 +1641,6 @@ style="padding:7px 10px;font-size:12px"
 <button
 id="batchDownload"
 class="btn btn-primary"
-style="padding:7px 10px;font-size:12px"
 >
 ⬇ 下载
 </button>
@@ -899,11 +1648,6 @@ style="padding:7px 10px;font-size:12px"
 <button
 id="batchDelete"
 class="btn btn-secondary"
-style="
-padding:7px 10px;
-font-size:12px;
-color:#ff6b6b;
-"
 >
 删除
 </button>
@@ -911,7 +1655,6 @@ color:#ff6b6b;
 <button
 id="batchClear"
 class="btn btn-secondary"
-style="padding:7px 10px;font-size:12px"
 >
 取消
 </button>
@@ -946,20 +1689,50 @@ document.getElementById(
 'click',
 clearSelection
 );
+
 }
 
 if(!selectedCount){
 
 bar.style.display='none';
+
+const topCount=
+document.getElementById(
+'selectedCount'
+);
+
+if(topCount){
+topCount.textContent=
+'已选择 0 个';
+}
+
 return;
+
 }
 
 bar.style.display='flex';
 
+const batchCount=
 document.getElementById(
 'batchCount'
-).textContent=
+);
+
+if(batchCount){
+
+batchCount.textContent=
 `已选 ${selectedCount} 个`;
+}
+
+const topCount=
+document.getElementById(
+'selectedCount'
+);
+
+if(topCount){
+
+topCount.textContent=
+`已选择 ${selectedCount} 个`;
+}
 
 const allSelected=
 currentVideos.length>0&&
@@ -973,6 +1746,7 @@ document.getElementById(
 allSelected
 ?'取消全选'
 :'全选';
+
 }
 
 /* ==================================================
@@ -980,44 +1754,63 @@ allSelected
    ================================================== */
 
 function isDuplicateVideo(file){
+
 if(!file)return false;
 
 return state.data.videos.some(v=>{
+
 const sameName=
-String(v.name||'').trim().toLowerCase()===
-String(file.name||'').trim().toLowerCase();
+String(v.name||'')
+.trim()
+.toLowerCase()
+===
+String(file.name||'')
+.trim()
+.toLowerCase();
 
 const sameSize=
-Number(v.size||0)===Number(file.size||0);
+Number(v.size||0)===
+Number(file.size||0);
 
 return sameName&&sameSize;
+
 });
+
 }
 
 function getSkipDuplicateSetting(){
-const checkbox=document.getElementById(
+
+const checkbox=
+document.getElementById(
 'skipUploadedVideos'
 );
 
 return checkbox
 ?checkbox.checked
 :true;
+
 }
 
 function injectDuplicateOption(){
-if(document.getElementById(
-'skipUploadedVideos'
-))return;
 
-const fileDrop=document.getElementById(
+if(
+document.getElementById(
+'skipUploadedVideos'
+)
+)return;
+
+const fileDrop=
+document.getElementById(
 'fileDrop'
 );
 
 if(!fileDrop)return;
 
-const wrap=document.createElement('label');
+const wrap=
+document.createElement('label');
 
-wrap.id='duplicateOption';
+wrap.id=
+'duplicateOption';
 
 wrap.style.cssText=`
 display:flex;
@@ -1082,40 +1875,60 @@ refreshSelectedFilesDisplay();
 }
 }
 );
+
 }
 
 function refreshSelectedFilesDisplay(){
-const files=[...state.selectedFiles];
 
-const nameEl=document.getElementById(
+const files=[
+...state.selectedFiles
+];
+
+const nameEl=
+document.getElementById(
 'fileName'
 );
 
-const btn=document.getElementById(
+const btn=
+document.getElementById(
 'uploadConfirmBtn'
 );
 
 if(!nameEl||!btn)return;
 
 if(!files.length){
+
 nameEl.textContent='';
+
 btn.disabled=true;
+
 btn.textContent='上传';
+
 return;
+
 }
 
 const totalSize=
 files.reduce(
-(sum,f)=>sum+f.size,
+(sum,f)=>
+sum+f.size,
 0
 );
 
 if(files.length===1){
+
 nameEl.textContent=
-`${files[0].name} · ${formatSize(files[0].size)}`;
+`${files[0].name} · ${
+formatSize(files[0].size)
+}`;
+
 }else{
+
 nameEl.textContent=
-`已选择 ${files.length} 个视频 · 总计 ${formatSize(totalSize)}`;
+`已选择 ${files.length} 个视频 · 总计 ${
+formatSize(totalSize)
+}`;
+
 }
 
 btn.disabled=false;
@@ -1124,44 +1937,72 @@ btn.textContent=
 files.length>1
 ?`上传 ${files.length} 个视频`
 :'上传';
+
 }
 
 function openUpload(){
-const s=document.getElementById(
+
+const s=
+document.getElementById(
 'uploadCat'
 );
 
 if(s){
+
 s.innerHTML=
 state.cats
-.filter(c=>c!=='全部')
-.map(c=>`
+.filter(
+c=>c!=='全部'
+)
+.map(
+c=>`
 <option value="${escapeHtml(c)}">
 ${escapeHtml(c)}
 </option>
-`)
+`
+)
 .join('');
+
 }
 
 state.selectedFiles=[];
 
 const fileInput=
-document.getElementById('fileInput');
+document.getElementById(
+'fileInput'
+);
 
 if(fileInput){
+
 fileInput.multiple=true;
 
 fileInput.setAttribute(
 'accept',
 'video/mp4,video/*'
 );
+
 }
 
 const nameEl=
-document.getElementById('fileName');
+document.getElementById(
+'fileName'
+);
 
 if(nameEl){
+
 nameEl.textContent='';
+
+}
+
+const tagsInput=
+document.getElementById(
+'uploadTags'
+);
+
+if(tagsInput){
+
+tagsInput.value='';
+
 }
 
 const btn=
@@ -1170,8 +2011,11 @@ document.getElementById(
 );
 
 if(btn){
+
 btn.disabled=true;
+
 btn.textContent='上传';
+
 }
 
 injectDuplicateOption();
@@ -1182,16 +2026,27 @@ document.getElementById(
 );
 
 if(duplicateCheckbox){
+
 duplicateCheckbox.checked=true;
+
 }
 
-openModal('uploadModal');
+openModal(
+'uploadModal'
+);
+
 }
 
 function handleFiles(fileList){
-if(!fileList||!fileList.length)return;
 
-const files=[...fileList];
+if(
+!fileList||
+!fileList.length
+)return;
+
+const files=[
+...fileList
+];
 
 const valid=[];
 
@@ -1200,39 +2055,56 @@ let duplicateCount=0;
 const skipDuplicate=
 getSkipDuplicateSetting();
 
-for(const file of files){
+for(
+const file of files
+){
 
 if(
 !file.type.startsWith('video/')&&
 !/\.mp4$/i.test(file.name)
 ){
+
 toast(
 `${file.name} 不是有效的视频文件`,
 'error'
 );
+
 continue;
+
 }
 
-if(file.size>CONFIG.MAX_FILE_SIZE){
+if(
+file.size>
+CONFIG.MAX_FILE_SIZE
+){
+
 toast(
 `${file.name} 超过 2GB，暂不建议导入`,
 'error'
 );
+
 continue;
+
 }
 
 if(
 skipDuplicate&&
 isDuplicateVideo(file)
 ){
+
 duplicateCount++;
+
 continue;
+
 }
 
 valid.push(file);
+
 }
 
-if(duplicateCount>0){
+if(
+duplicateCount>0
+){
 
 if(valid.length){
 
@@ -1247,7 +2119,9 @@ toast(
 `选择的视频都已上传，共过滤 ${duplicateCount} 个`,
 'error'
 );
+
 }
+
 }
 
 if(!valid.length){
@@ -1255,7 +2129,9 @@ if(!valid.length){
 state.selectedFiles=[];
 
 const nameEl=
-document.getElementById('fileName');
+document.getElementById(
+'fileName'
+);
 
 const btn=
 document.getElementById(
@@ -1263,62 +2139,90 @@ document.getElementById(
 );
 
 if(nameEl){
+
 nameEl.textContent=
 duplicateCount
 ?`已过滤 ${duplicateCount} 个重复视频`
 :'';
+
 }
 
 if(btn){
+
 btn.disabled=true;
+
 btn.textContent='上传';
+
 }
 
 return;
+
 }
 
-state.selectedFiles=valid;
+state.selectedFiles=
+valid;
 
 refreshSelectedFilesDisplay();
+
 }
 
 function handleFile(file){
+
 if(!file)return;
 
 handleFiles([file]);
+
 }
 
 async function checkSpace(n){
+
 try{
 
 const e=
-await navigator.storage?.estimate?.();
+await navigator
+.storage
+?.estimate?.();
 
 if(e?.quota){
 
 const available=
-e.quota-(e.usage||0);
+e.quota-
+(e.usage||0);
 
 if(
-n+CONFIG.STORAGE_RESERVE>
+n+
+CONFIG.STORAGE_RESERVE>
 available
 ){
 
 toast(
-`可用空间不足：约剩 ${formatSize(Math.max(0,available))}`,
+`可用空间不足：约剩 ${
+formatSize(
+Math.max(
+0,
+available
+)
+)
+}`,
 'error'
 );
 
 return false;
+
 }
+
 }
+
 }catch{}
 
 return true;
+
 }
 
 function createThumbnail(file){
-return new Promise(resolve=>{
+
+return new Promise(
+resolve=>{
 
 const u=
 URL.createObjectURL(file);
@@ -1327,12 +2231,15 @@ const v=
 document.createElement('video');
 
 v.muted=true;
+
 v.playsInline=true;
+
 v.preload='metadata';
 
 let done=false;
 
 const finish=x=>{
+
 if(done)return;
 
 done=true;
@@ -1340,9 +2247,11 @@ done=true;
 URL.revokeObjectURL(u);
 
 resolve(x||'');
+
 };
 
 v.onloadeddata=()=>{
+
 try{
 
 v.currentTime=
@@ -1355,9 +2264,11 @@ Math.max(
 );
 
 }catch{}
+
 };
 
 v.onseeked=()=>{
+
 try{
 
 const c=
@@ -1380,6 +2291,7 @@ w*
 );
 
 c.width=w;
+
 c.height=h;
 
 const ctx=
@@ -1401,8 +2313,11 @@ c.toDataURL(
 );
 
 }catch{
+
 finish('');
+
 }
+
 };
 
 v.onerror=()=>{
@@ -1411,15 +2326,23 @@ finish('');
 
 v.src=u;
 
-setTimeout(()=>{
+setTimeout(
+()=>{
 finish('');
-},5000);
+},
+5000
+);
 
-});
+}
+);
+
 }
 
 async function doUpload(){
-const files=[...state.selectedFiles];
+
+const files=[
+...state.selectedFiles
+];
 
 if(!files.length)return;
 
@@ -1437,19 +2360,14 @@ try{
 再次检查重复视频
 ==================================================
 
-这里故意再检查一次。
+上传窗口打开后，视频库可能已经发生变化。
 
-因为用户打开上传窗口以后，
-视频库可能已经发生变化。
+因此真正保存前再次检查一次。
 
-例如：
+重复判断：
 
-1. 打开上传窗口
-2. 选择 A.mp4
-3. 另一个操作已经把 A.mp4 保存进视频库
-4. 再点击上传
+文件名 + 文件大小
 
-因此最终真正保存之前再检查一次。
 ==================================================
 */
 
@@ -1460,17 +2378,23 @@ const uploadFiles=[];
 
 let duplicateCount=0;
 
-for(const file of files){
+for(
+const file of files
+){
 
 if(
 skipDuplicate&&
 isDuplicateVideo(file)
 ){
+
 duplicateCount++;
+
 continue;
+
 }
 
 uploadFiles.push(file);
+
 }
 
 if(!uploadFiles.length){
@@ -1478,6 +2402,7 @@ if(!uploadFiles.length){
 state.selectedFiles=[];
 
 btn.textContent='上传';
+
 btn.disabled=true;
 
 toast(
@@ -1488,27 +2413,44 @@ duplicateCount
 );
 
 return;
+
 }
 
 const totalSize=
 uploadFiles.reduce(
-(sum,f)=>sum+f.size,
+(sum,f)=>
+sum+f.size,
 0
 );
 
-btn.textContent='检查空间…';
+btn.textContent=
+'检查空间…';
 
-if(!(await checkSpace(totalSize))){
+if(
+!(await checkSpace(totalSize))
+){
 
 btn.disabled=false;
 
 return;
+
 }
 
 const selectedCategory=
 document.getElementById(
 'uploadCat'
-)?.value||'未分类';
+)?.value||
+'未分类';
+
+const tagsInput=
+document.getElementById(
+'uploadTags'
+);
+
+const selectedTags=
+normalizeTags(
+tagsInput?.value||''
+);
 
 const newVideos=[];
 
@@ -1523,7 +2465,11 @@ uploadFiles[i];
 
 btn.textContent=
 uploadFiles.length>1
-?`生成缩略图 ${i+1}/${uploadFiles.length}…`
+?`生成缩略图 ${
+i+1
+}/${
+uploadFiles.length
+}…`
 :'生成缩略图…';
 
 const thumbnail=
@@ -1531,45 +2477,65 @@ await createThumbnail(file);
 
 btn.textContent=
 uploadFiles.length>1
-?`保存 ${i+1}/${uploadFiles.length}…`
+?`保存 ${
+i+1
+}/${
+uploadFiles.length
+}…`
 :'保存原文件…';
 
 const blob=
 file.slice(
 0,
 file.size,
-file.type||'video/mp4'
+file.type||
+'video/mp4'
 );
 
 const v={
+
 id:
-Date.now().toString(36)+
-Math.random().toString(36).slice(2,10),
+Date.now()
+.toString(36)+
+Math.random()
+.toString(36)
+.slice(2,10),
 
 name:file.name,
 
-category:selectedCategory,
+category:
+selectedCategory,
+
+tags:[
+...selectedTags
+],
 
 blob,
 
 size:file.size,
 
-type:file.type||'video/mp4',
+type:
+file.type||
+'video/mp4',
 
 createdAt:
 Date.now()+i,
 
 thumbnail
+
 };
 
 newVideos.push(v);
+
 }
 
 const data={
+
 videos:[
 ...state.data.videos,
 ...newVideos
 ]
+
 };
 
 await IDB.set(
@@ -1582,25 +2548,37 @@ state.data=data;
 state.selectedFiles=[];
 
 renderCats();
+
 renderVideos();
+
 updateStorage();
+
 updateBatchBar();
 
-closeModal('uploadModal');
+closeModal(
+'uploadModal'
+);
 
 if(duplicateCount){
 
 toast(
-`成功上传 ${newVideos.length} 个视频，已跳过 ${duplicateCount} 个重复视频`
+`成功上传 ${
+newVideos.length
+} 个视频，已跳过 ${
+duplicateCount
+} 个重复视频`
 );
 
 }else{
 
 toast(
 uploadFiles.length>1
-?`成功上传 ${uploadFiles.length} 个视频，原 MP4 已保存`
+?`成功上传 ${
+uploadFiles.length
+} 个视频，原 MP4 已保存`
 :'上传成功，原 MP4 已保存'
 );
+
 }
 
 }catch(e){
@@ -1623,7 +2601,9 @@ btn.textContent='上传';
 
 btn.disabled=
 state.selectedFiles.length===0;
+
 }
+
 }
 
 
@@ -1632,19 +2612,33 @@ state.selectedFiles.length===0;
    ================================================== */
 
 function dataURLToBlob(s){
-const [head,body]=s.split(',',2);
+
+const [
+head,
+body
+]=s.split(
+',',
+2
+);
 
 if(!body){
+
 throw new Error(
 '备份数据损坏'
 );
+
 }
 
 const mime=
-(head.match(/data:([^;]+)/)||[])[1]||
+(
+head.match(
+/data:([^;]+)/
+)||[]
+)[1]||
 'application/octet-stream';
 
-const bin=atob(body);
+const bin=
+atob(body);
 
 const a=
 new Uint8Array(
@@ -1656,19 +2650,28 @@ let i=0;
 i<bin.length;
 i++
 ){
-a[i]=bin.charCodeAt(i);
+
+a[i]=
+bin.charCodeAt(i);
+
 }
 
 return new Blob(
 [a],
-{type:mime}
+{
+type:mime
+}
 );
+
 }
 
 function blobToDataURL(b){
+
 return new Promise(
 (res,rej)=>{
-const r=new FileReader();
+
+const r=
+new FileReader();
 
 r.onload=()=>{
 res(r.result);
@@ -1679,18 +2682,23 @@ rej(r.error);
 };
 
 r.readAsDataURL(b);
+
 }
 );
+
 }
 
 async function exportBackup(){
 
-if(!state.data.videos.length){
+if(
+!state.data.videos.length
+){
 
 return toast(
 '暂无视频可备份',
 'error'
 );
+
 }
 
 const btn=
@@ -1699,7 +2707,9 @@ document.getElementById(
 );
 
 btn.disabled=true;
-btn.textContent='⏳ 生成中…';
+
+btn.textContent=
+'⏳ 生成中…';
 
 try{
 
@@ -1709,7 +2719,8 @@ for(
 const v of state.data.videos
 ){
 
-const b=asBlob(v);
+const b=
+asBlob(v);
 
 if(!b)continue;
 
@@ -1720,6 +2731,9 @@ id:v.id,
 name:v.name,
 
 category:v.category,
+
+tags:
+normalizeTags(v.tags),
 
 data:
 await blobToDataURL(b),
@@ -1734,13 +2748,16 @@ createdAt:
 v.createdAt,
 
 thumbnail:
-v.thumbnail||''
+v.thumbnail||
+''
+
 });
+
 }
 
 const payload={
 
-version:3,
+version:4,
 
 exportedAt:
 Date.now(),
@@ -1749,12 +2766,15 @@ categories:
 state.cats,
 
 videos
+
 };
 
 const blob=
 new Blob(
 [
-JSON.stringify(payload)
+JSON.stringify(
+payload
+)
 ],
 {
 type:'application/json'
@@ -1762,15 +2782,23 @@ type:'application/json'
 );
 
 const u=
-URL.createObjectURL(blob);
+URL.createObjectURL(
+blob
+);
 
 const a=
-document.createElement('a');
+document.createElement(
+'a'
+);
 
 a.href=u;
 
 a.download=
-`video-backup-${new Date().toISOString().slice(0,10)}.json`;
+`video-backup-${
+new Date()
+.toISOString()
+.slice(0,10)
+}.json`;
 
 document.body.appendChild(a);
 
@@ -1778,16 +2806,22 @@ a.click();
 
 a.remove();
 
-setTimeout(()=>{
+setTimeout(
+()=>{
 URL.revokeObjectURL(u);
-},1000);
+},
+1000
+);
 
-toast('备份已导出');
+toast(
+'备份已导出'
+);
 
 }catch(e){
 
 toast(
-'导出失败：'+e.message,
+'导出失败：'+
+e.message,
 'error'
 );
 
@@ -1797,7 +2831,9 @@ btn.disabled=false;
 
 btn.textContent=
 '📥 导出备份';
+
 }
+
 }
 
 function openImport(){
@@ -1812,19 +2848,27 @@ document.getElementById(
 'importConfirmBtn'
 ).disabled=true;
 
-openModal('importModal');
+openModal(
+'importModal'
+);
+
 }
 
 function handleImport(file){
 
 if(!file)return;
 
-if(!/\.json$/i.test(file.name)){
+if(
+!/\.json$/i.test(
+file.name
+)
+){
 
 return toast(
 '请选择 JSON 备份文件',
 'error'
 );
+
 }
 
 const r=
@@ -1835,7 +2879,9 @@ r.onload=()=>{
 try{
 
 const o=
-JSON.parse(r.result);
+JSON.parse(
+r.result
+);
 
 if(
 !Array.isArray(o.videos)||
@@ -1845,6 +2891,7 @@ if(
 throw new Error(
 '备份格式不正确'
 );
+
 }
 
 state.importData=o;
@@ -1852,7 +2899,9 @@ state.importData=o;
 document.getElementById(
 'importFileName'
 ).textContent=
-`${file.name} · ${o.videos.length} 个视频`;
+`${file.name} · ${
+o.videos.length
+} 个视频`;
 
 document.getElementById(
 'importConfirmBtn'
@@ -1861,20 +2910,26 @@ document.getElementById(
 }catch(e){
 
 toast(
-'无效的备份文件：'+e.message,
+'无效的备份文件：'+
+e.message,
 'error'
 );
+
 }
+
 };
 
 r.onerror=()=>{
+
 toast(
 '文件读取失败',
 'error'
 );
+
 };
 
 r.readAsText(file);
+
 }
 
 async function doImport(){
@@ -1886,10 +2941,14 @@ if(!o)return;
 
 if(
 !confirm(
-`确定恢复备份？这将覆盖当前所有数据（${o.videos.length} 个视频）。`
+`确定恢复备份？这将覆盖当前所有数据（${
+o.videos.length
+} 个视频）。`
 )
 ){
+
 return;
+
 }
 
 const btn=
@@ -1898,7 +2957,9 @@ document.getElementById(
 );
 
 btn.disabled=true;
-btn.textContent='恢复中…';
+
+btn.textContent=
+'恢复中…';
 
 try{
 
@@ -1915,11 +2976,17 @@ o.videos[i];
 
 btn.textContent=
 o.videos.length>1
-?`恢复 ${i+1}/${o.videos.length}…`
+?`恢复 ${
+i+1
+}/${
+o.videos.length
+}…`
 :'恢复中…';
 
 const b=
-dataURLToBlob(v.data);
+dataURLToBlob(
+v.data
+);
 
 videos.push({
 
@@ -1928,9 +2995,16 @@ id:v.id,
 name:v.name,
 
 category:
-o.categories.includes(v.category)
+o.categories.includes(
+v.category
+)
 ?v.category
 :'未分类',
+
+tags:
+normalizeTags(
+v.tags
+),
 
 blob:b,
 
@@ -1946,8 +3020,11 @@ Number(v.createdAt)||
 Date.now(),
 
 thumbnail:
-v.thumbnail||''
+v.thumbnail||
+''
+
 });
+
 }
 
 const cats=[
@@ -1960,27 +3037,36 @@ c.trim()
 )
 ];
 
-if(!cats.includes('全部')){
+if(
+!cats.includes('全部')
+){
 
 cats.unshift('全部');
+
 }
 
-if(!cats.includes('未分类')){
+if(
+!cats.includes('未分类')
+){
 
 cats.splice(
 1,
 0,
 '未分类'
 );
+
 }
 
 await IDB.set(
 CONFIG.DB_KEY,
-{videos}
+{
+videos
+}
 );
 
 state.objectUrls.forEach(
-u=>URL.revokeObjectURL(u)
+u=>
+URL.revokeObjectURL(u)
 );
 
 state.objectUrls.clear();
@@ -2003,18 +3089,26 @@ document.getElementById(
 '全部视频';
 
 renderCats();
+
 renderVideos();
+
 updateStorage();
+
 updateBatchBar();
 
-closeModal('importModal');
+closeModal(
+'importModal'
+);
 
-toast('备份恢复成功');
+toast(
+'备份恢复成功'
+);
 
 }catch(e){
 
 toast(
-'恢复失败：'+e.message,
+'恢复失败：'+
+e.message,
 'error'
 );
 
@@ -2024,9 +3118,10 @@ btn.textContent='恢复';
 
 btn.disabled=
 !state.importData;
-}
+
 }
 
+}
 
 /* ==================================================
    分类管理
@@ -2341,7 +3436,6 @@ openCatManage();
 
 toast('重命名成功');
 }
-
 
 /* ==================================================
    多选上传 / 批量操作样式
@@ -2708,307 +3802,3 @@ u=>URL.revokeObjectURL(u)
 }
 );
 }
-
-
-/* ==================================================
-   上传弹窗初始化
-   ================================================== */
-
-function prepareUploadModal(){
-
-const fileInput=
-document.getElementById(
-'fileInput'
-);
-
-if(fileInput){
-
-fileInput.multiple=true;
-
-fileInput.setAttribute(
-'accept',
-'video/mp4,video/*'
-);
-}
-
-const drop=
-document.getElementById(
-'fileDrop'
-);
-
-if(drop){
-
-const hint=
-drop.querySelector(
-'.drop-hint'
-);
-
-if(hint){
-
-hint.textContent=
-'可一次选择多个视频，原始文件直接保存，不转码、不压缩';
-}
-}
-
-injectDuplicateOption();
-}
-
-
-/* ==================================================
-   批量选择辅助
-   ================================================== */
-
-function createBatchSelectionHelp(){
-
-const content=
-document.getElementById(
-'content'
-);
-
-if(!content)return;
-
-/*
-不额外改变原页面结构。
-
-批量操作栏只在用户勾选视频后出现。
-*/
-}
-
-
-/* ==================================================
-   旧数据修复
-   ================================================== */
-
-function repairLegacyData(){
-
-if(!Array.isArray(
-state.data.videos
-)){
-
-state.data.videos=[];
-}
-
-state.data.videos=
-state.data.videos.filter(
-v=>
-v&&
-typeof v==='object'
-);
-
-state.data.videos.forEach(
-v=>{
-
-if(!v.id){
-
-v.id=
-Date.now().toString(36)+
-Math.random()
-.toString(36)
-.slice(2,8);
-}
-
-if(!v.name){
-
-v.name=
-'未命名视频.mp4';
-}
-
-if(!v.category){
-
-v.category=
-'未分类';
-}
-
-if(!v.type){
-
-v.type=
-'video/mp4';
-}
-
-if(!v.createdAt){
-
-v.createdAt=
-Date.now();
-}
-
-if(!v.size){
-
-const b=
-asBlob(v);
-
-if(b){
-v.size=b.size;
-}
-}
-}
-);
-}
-
-function cleanupSelection(){
-
-const validIds=
-new Set(
-state.data.videos.map(
-v=>v.id
-)
-);
-
-state.selectedIds=
-new Set(
-[...state.selectedIds]
-.filter(
-id=>
-validIds.has(id)
-)
-);
-}
-
-function initBatchBar(){
-
-updateBatchBar();
-}
-
-
-/* ==================================================
-   初始化
-   ================================================== */
-
-document.addEventListener(
-'DOMContentLoaded',
-async()=>{
-
-bind();
-
-injectMultiUploadStyle();
-
-setupMultipleFileInput();
-
-prepareUploadModal();
-
-createBatchSelectionHelp();
-
-await loadData();
-
-repairLegacyData();
-
-cleanupSelection();
-
-renderCats();
-
-renderVideos();
-
-initBatchBar();
-}
-);
-
-
-/*
-====================================================
-本文件功能说明
-====================================================
-
-1. 单个视频上传
-2. 多个视频同时上传
-3. MP4 原文件 Blob 保存
-4. IndexedDB 本地存储
-5. 视频播放
-6. 单个视频下载
-7. 多选视频
-8. 批量下载
-9. 批量删除
-10. 当前分类全选 / 取消全选
-11. 分类添加
-12. 分类删除
-13. 分类重命名
-14. JSON 备份
-15. JSON 恢复
-16. 缩略图生成
-17. 存储空间估算
-18. 移动端侧边栏
-19. Toast 提示
-20. 旧 Base64 数据兼容
-21. 多选上传
-22. 上传时自动过滤重复视频
-23. 可关闭「已上传的视频不显示」
-====================================================
-
-多选上传：
-
-手机或电脑点击「上传视频」后，
-文件选择器允许一次选择多个视频。
-
-拖拽上传也支持多个文件。
-
-重复视频过滤：
-
-上传窗口中默认开启：
-
-「已上传的视频不显示」
-
-程序会根据：
-
-文件名 + 文件大小
-
-判断当前选择的视频是否已经存在于视频库。
-
-如果已经存在，
-该视频不会进入上传队列。
-
-例如：
-
-视频库已有：
-
-example.mp4
-大小：120 MB
-
-再次选择：
-
-example.mp4
-大小：120 MB
-
-程序会自动过滤。
-
-如果关闭：
-
-「已上传的视频不显示」
-
-则允许再次上传同名同大小的视频。
-
-注意：
-
-这里使用「文件名 + 文件大小」作为快速判断条件。
-
-如果两个不同的视频恰好拥有完全相同的文件名和文件大小，
-开启过滤时也会被认为是重复视频。
-
-这样做的优点是：
-
-不需要读取整个视频计算 Hash，
-不会因为大视频产生额外的巨大内存和 CPU 开销，
-尤其适合手机端。
-
-多选下载：
-
-在视频卡片左上角勾选视频，
-底部会自动出现批量操作栏：
-
-「全选」
-「⬇ 下载」
-「删除」
-「取消」
-
-选择多个视频后点击「⬇ 下载」，
-浏览器会依次触发下载。
-
-注意：
-
-浏览器本身可能会对连续下载进行拦截。
-
-如果浏览器提示：
-
-「允许多个下载」
-
-选择允许即可。
-
-====================================================
-*/
