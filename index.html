@@ -44,6 +44,7 @@
 </div>
 
 </div>
+
 </aside>
 
 
@@ -96,48 +97,60 @@ id="clearSelectionBtn"
 </div>
 
 
-<div
-class="view-switcher"
-id="viewSwitcher"
-aria-label="显示方式"
->
-
-<button
-class="view-btn active"
-data-view="grid"
-title="网格显示"
->
-▦
-<span>网格</span>
-</button>
-
-<button
-class="view-btn"
-data-view="timeline"
-title="时间轴显示"
->
-◷
-<span>时间轴</span>
-</button>
-
-<button
-class="view-btn"
-data-view="tags"
-title="标签显示"
->
-🏷
-<span>标签</span>
-</button>
-
-</div>
-
-
 <button
 class="upload-btn"
 id="uploadBtnMain"
 >
 <span>＋</span>
 上传视频
+</button>
+
+</div>
+
+</div>
+
+
+<!-- ==================================================
+     工具栏
+     ================================================== -->
+
+<div class="view-toolbar" id="viewToolbar">
+
+<div class="view-toolbar-left">
+
+<button
+class="view-btn active"
+id="gridViewBtn"
+data-view="grid"
+>
+▦ 网格
+</button>
+
+<button
+class="view-btn"
+id="timelineViewBtn"
+data-view="timeline"
+>
+◷ 时间轴
+</button>
+
+<button
+class="view-btn"
+id="tagViewBtn"
+data-view="tag"
+>
+🏷️ 标签
+</button>
+
+</div>
+
+<div class="view-toolbar-right">
+
+<button
+class="select-all-btn"
+id="selectAllBtn"
+>
+全选
 </button>
 
 </div>
@@ -163,8 +176,8 @@ id="content"
 
 <div
 class="sidebar-overlay"
-id="sidebarOverlay"
-></div>
+id="sidebarOverlay">
+</div>
 
 
 <!-- ==================================================
@@ -196,7 +209,6 @@ data-close="uploadModal"
 
 <div class="modal-body">
 
-
 <div class="form-group">
 
 <label for="uploadCat">
@@ -218,11 +230,11 @@ data-close="uploadModal"
 type="text"
 id="uploadTags"
 maxlength="200"
-placeholder="例如：JavaScript、教程、前端"
-/>
+placeholder="例如：英语、学习、素材，用逗号分隔"
+>
 
 <p class="form-hint">
-多个标签请用逗号分隔。标签属于当前分类。
+分类用于归类视频；标签用于进一步细分和搜索。
 </p>
 
 </div>
@@ -248,20 +260,21 @@ id="fileDrop"
 </p>
 
 <p class="drop-hint">
-支持一次选择多个 MP4，原始文件直接保存，不转码、不压缩
+可一次选择多个视频，原始文件直接保存，不转码、不压缩
 </p>
 
 <div
 class="file-name"
-id="fileName"
-></div>
+id="fileName">
+</div>
 
 </div>
+
 
 <input
 type="file"
 id="fileInput"
-accept="video/mp4,.mp4"
+accept="video/mp4,video/*"
 multiple
 >
 
@@ -269,7 +282,7 @@ multiple
 
 
 <p class="form-hint">
-所有视频均按原始 MP4 文件保存。
+所有视频均按原始文件保存。
 网页不会改变原文件。
 </p>
 
@@ -350,10 +363,13 @@ preload="metadata"
 分类 · 大小 · 日期
 </p>
 
+
 <div
 class="player-tags"
 id="playerTags"
-></div>
+>
+</div>
+
 
 <div class="player-actions">
 
@@ -486,15 +502,16 @@ id="importDrop"
 </p>
 
 <p class="drop-hint">
-恢复会覆盖当前视频和分类
+恢复会覆盖当前视频、分类和标签
 </p>
 
 <div
 class="file-name"
-id="importFileName"
-></div>
+id="importFileName">
+</div>
 
 </div>
+
 
 <input
 type="file"
@@ -559,7 +576,8 @@ data-close="catManageModal"
 <div
 class="modal-body"
 id="catManageBody"
-></div>
+>
+</div>
 
 
 <div class="modal-footer">
@@ -587,7 +605,8 @@ class="toast"
 id="toast"
 role="status"
 aria-live="polite"
-></div>
+>
+</div>
 
 
 <script src="app.js"></script>
