@@ -21,40 +21,40 @@
 <button
 class="add-cat-btn"
 id="addCatBtn"
-title="添加分类"
->
+type="button"
+title="添加分类">
 +
 </button>
 
 </div>
-
 
 <div
 class="cat-list"
 id="catList">
 </div>
 
-
 <div class="sidebar-footer">
 
 <button
 class="backup-btn"
-id="catManageBtn">
+id="catManageBtn"
+type="button">
 ⚙️ 管理分类
 </button>
 
 <button
 class="backup-btn"
-id="exportBtn">
+id="exportBtn"
+type="button">
 📥 导出备份
 </button>
 
 <button
 class="backup-btn"
-id="importBtn">
+id="importBtn"
+type="button">
 📤 恢复备份
 </button>
-
 
 <div class="storage-bar">
 
@@ -64,7 +64,6 @@ id="storageFill">
 </div>
 
 </div>
-
 
 <div
 class="storage-text"
@@ -79,31 +78,25 @@ id="storageText">
 
 <main class="main">
 
-
 <div class="topbar">
 
-
 <div class="topbar-left">
-
 
 <button
 class="menu-btn"
 id="menuBtn"
+type="button"
 aria-label="打开分类菜单">
 ☰
 </button>
-
 
 <h1 id="pageTitle">
 全部视频
 </h1>
 
-
 </div>
 
-
 <div class="topbar-actions">
-
 
 <div
 class="selection-toolbar"
@@ -113,32 +106,31 @@ id="selectionToolbar">
 已选择 0 个
 </span>
 
-
 <button
 class="toolbar-btn"
-id="downloadSelectedBtn">
+id="downloadSelectedBtn"
+type="button">
 ⬇ 批量下载
 </button>
 
-
 <button
 class="toolbar-btn cancel-selection-btn"
-id="clearSelectionBtn">
+id="clearSelectionBtn"
+type="button">
 取消选择
 </button>
 
 </div>
 
-
 <button
 class="upload-btn"
-id="uploadBtnMain">
+id="uploadBtnMain"
+type="button">
 
 <span>＋</span>
 上传视频
 
 </button>
-
 
 </div>
 
@@ -154,7 +146,6 @@ id="content">
 </div>
 
 </div>
-
 
 </main>
 
@@ -175,17 +166,16 @@ id="uploadModal">
 
 <div class="modal">
 
-
 <div class="modal-header">
 
 <h3>
 📤 上传视频
 </h3>
 
-
 <button
 class="modal-close"
 data-close="uploadModal"
+type="button"
 aria-label="关闭">
 ×
 </button>
@@ -195,13 +185,11 @@ aria-label="关闭">
 
 <div class="modal-body">
 
-
 <div class="form-group">
 
 <label for="uploadCat">
 选择分类
 </label>
-
 
 <select id="uploadCat">
 </select>
@@ -215,41 +203,68 @@ aria-label="关闭">
 选择视频文件
 </label>
 
-
 <div
 class="file-drop"
 id="fileDrop">
-
 
 <div class="drop-icon">
 🎬
 </div>
 
-
 <p>
 点击或拖拽视频到此处
 </p>
 
-
 <p class="drop-hint">
 可一次选择多个视频，原始文件直接保存，不转码、不压缩
 </p>
-
 
 <div
 class="file-name"
 id="fileName">
 </div>
 
-
 </div>
-
 
 <input
 type="file"
 id="fileInput"
-accept="video/mp4,video/*"
+accept="video/*"
 multiple>
+
+</div>
+
+
+<div
+class="upload-tags"
+id="uploadTags">
+
+<label
+class="upload-tags-label"
+for="uploadTagInput">
+标签
+</label>
+
+<div class="upload-tag-input-row">
+
+<input
+type="text"
+id="uploadTagInput"
+maxlength="20"
+placeholder="输入标签后添加">
+
+<button
+type="button"
+id="uploadTagAdd">
+添加
+</button>
+
+</div>
+
+<div
+class="upload-tag-list"
+id="uploadTagList">
+</div>
 
 </div>
 
@@ -259,27 +274,25 @@ multiple>
 网页不会改变原文件。
 </p>
 
-
 </div>
 
 
 <div class="modal-footer">
 
-
 <button
 class="btn btn-secondary"
-data-close="uploadModal">
+data-close="uploadModal"
+type="button">
 取消
 </button>
-
 
 <button
 class="btn btn-primary"
 id="uploadConfirmBtn"
+type="button"
 disabled>
 上传
 </button>
-
 
 </div>
 
@@ -296,23 +309,21 @@ id="playerModal">
 
 <div class="modal player-modal">
 
-
 <div class="modal-header">
 
 <h3>
 ▶️ 播放
 </h3>
 
-
 <button
 class="modal-close"
 data-close="playerModal"
+type="button"
 aria-label="关闭">
 ×
 </button>
 
 </div>
-
 
 <div class="player-container">
 
@@ -325,29 +336,24 @@ preload="metadata">
 
 </div>
 
-
 <div class="player-info">
-
 
 <h3 id="playerTitle">
 视频标题
 </h3>
 
-
 <p id="playerMeta">
 分类 · 大小 · 日期
 </p>
 
-
 <div class="player-actions">
-
 
 <button
 class="btn btn-primary"
-id="playerDownloadBtn">
+id="playerDownloadBtn"
+type="button">
 ⬇ 下载原文件
 </button>
-
 
 </div>
 
@@ -366,34 +372,29 @@ id="catModal">
 
 <div class="modal modal-sm">
 
-
 <div class="modal-header">
 
 <h3>
 ➕ 添加新分类
 </h3>
 
-
 <button
 class="modal-close"
 data-close="catModal"
+type="button"
 aria-label="关闭">
 ×
 </button>
 
 </div>
 
-
 <div class="modal-body">
 
-
 <div class="form-group">
-
 
 <label for="newCatName">
 分类名称
 </label>
-
 
 <input
 type="text"
@@ -403,26 +404,23 @@ placeholder="例如：学习、素材、收藏…">
 
 </div>
 
-
 </div>
-
 
 <div class="modal-footer">
 
-
 <button
 class="btn btn-secondary"
-data-close="catModal">
+data-close="catModal"
+type="button">
 取消
 </button>
 
-
 <button
 class="btn btn-primary"
-id="addCatConfirmBtn">
+id="addCatConfirmBtn"
+type="button">
 添加
 </button>
-
 
 </div>
 
@@ -439,55 +437,46 @@ id="importModal">
 
 <div class="modal modal-sm">
 
-
 <div class="modal-header">
 
 <h3>
 📤 恢复备份
 </h3>
 
-
 <button
 class="modal-close"
 data-close="importModal"
+type="button"
 aria-label="关闭">
 ×
 </button>
 
 </div>
 
-
 <div class="modal-body">
-
 
 <div
 class="import-drop"
 id="importDrop">
 
-
 <div class="drop-icon">
 📂
 </div>
-
 
 <p>
 点击选择 JSON 备份文件
 </p>
 
-
 <p class="drop-hint">
 恢复会覆盖当前视频和分类
 </p>
-
 
 <div
 class="file-name"
 id="importFileName">
 </div>
 
-
 </div>
-
 
 <input
 type="file"
@@ -496,24 +485,22 @@ accept="application/json,.json">
 
 </div>
 
-
 <div class="modal-footer">
-
 
 <button
 class="btn btn-secondary"
-data-close="importModal">
+data-close="importModal"
+type="button">
 取消
 </button>
-
 
 <button
 class="btn btn-primary"
 id="importConfirmBtn"
+type="button"
 disabled>
 恢复
 </button>
-
 
 </div>
 
@@ -530,39 +517,35 @@ id="catManageModal">
 
 <div class="modal modal-md">
 
-
 <div class="modal-header">
 
 <h3>
 ⚙️ 管理分类
 </h3>
 
-
 <button
 class="modal-close"
 data-close="catManageModal"
+type="button"
 aria-label="关闭">
 ×
 </button>
 
 </div>
 
-
 <div
 class="modal-body"
 id="catManageBody">
 </div>
 
-
 <div class="modal-footer">
-
 
 <button
 class="btn btn-secondary"
-data-close="catManageModal">
+data-close="catManageModal"
+type="button">
 关闭
 </button>
-
 
 </div>
 
