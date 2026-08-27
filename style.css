@@ -287,14 +287,15 @@ body {
     color: var(--accent);
     cursor: pointer;
     font-size: 16px;
-    display: none;
+    display: flex;
     align-items: center;
     justify-content: center;
     backdrop-filter: blur(4px);
     transition: var(--transition);
+    opacity: 0.5;
 }
 
-.video-card:hover .delete-btn { display: flex; }
+.video-card:hover .delete-btn { opacity: 1; background: rgba(0,0,0,0.7); }
 
 .delete-btn:hover { background: var(--accent); color: white; }
 
@@ -594,7 +595,70 @@ input[type="file"] { display: none; }
 }
 
 @media (max-width: 560px) {
+    .menu-btn { display: flex; }
     .sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-100%); z-index: 50; transition: transform 0.3s ease; }
     .sidebar.open { transform: translateX(0); }
     .video-grid { grid-template-columns: 1fr; }
+    .topbar h1 { font-size: 16px; }
+    .upload-btn { padding: 8px 14px; font-size: 13px; }
 }
+
+
+/* 分类删除按钮 */
+.cat-del-btn {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    border: none;
+    background: transparent;
+    color: var(--text2);
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: 0.2s;
+    margin-left: 4px;
+    flex-shrink: 0;
+    opacity: 0.35;
+}
+
+.cat-item:hover .cat-del-btn { opacity: 0.8; }
+
+.cat-del-btn:hover {
+    background: var(--accent);
+    color: white;
+}
+
+.cat-item.active .cat-del-btn { color: var(--text2); }
+.cat-item.active .cat-del-btn:hover { color: white; }
+
+
+/* 汉堡菜单 */
+.menu-btn {
+    display: none;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--card);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 18px;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+    margin-right: 10px;
+}
+.menu-btn:hover { background: var(--hover); }
+
+/* 移动端侧边栏遮罩 */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 40;
+    backdrop-filter: blur(2px);
+}
+.sidebar-overlay.active { display: block; }
