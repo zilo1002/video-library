@@ -2,7 +2,6 @@ const CONFIG={
 DB_NAME:'VideoLibraryDB',
 DB_VERSION:4,
 STORE:'library',
-VIDEO_STORE:'videos',
 DB_KEY:'videoLib_v1',
 CAT_KEY:'videoLib_cats_v1',
 DEFAULT_CATS:['全部','未分类','教程','电影','音乐','其他'],
@@ -23,6 +22,7 @@ data:{videos:[]},
 cats:[...CONFIG.DEFAULT_CATS],
 currentCat:'全部',
 selectedFiles:[],
+uploadTags:[],
 importData:null,
 objectUrls:new Map(),
 currentPlayerId:null,
@@ -31,8 +31,7 @@ batchMode:false,
 hideUploadedDuplicates:false,
 viewMode:'grid',
 currentTag:'全部',
-selectedTags:new Set(),
-uploadTags:[]
+selectedTags:new Set()
 };
 
 const IDB={
@@ -42,35 +41,13 @@ open(){
 return new Promise((resolve,reject)=>{
 if(this.db)return resolve(this.db);
 
-const r=indexedDB.open(
-CONFIG.DB_NAME,
-CONFIG.DB_VERSION
-);
+const r=indexedDB.open(CONFIG.DB_NAME,CONFIG.DB_VERSION);
 
 r.onupgradeneeded=e=>{
 const db=e.target.result;
 
 if(!db.objectStoreNames.contains(CONFIG.STORE)){
 db.createObjectStore(CONFIG.STORE);
-}
-
-if(!db.objectStoreNames.contains(CONFIG.VIDEO_STORE)){
-const store=db.createObjectStore(
-CONFIG.VIDEO_STORE,
-{keyPath:'id'}
-);
-
-store.createIndex(
-'createdAt',
-'createdAt',
-{unique:false}
-);
-
-store.createIndex(
-'category',
-'category',
-{unique:false}
-);
 }
 };
 
@@ -86,238 +63,56 @@ resolve(this.db);
 };
 
 r.onerror=()=>{
-reject(
-r.error||
-new Error('IndexedDB 打开失败')
-);
+reject(r.error||new Error('IndexedDB 打开失败'));
 };
 });
 },
 
 get(key){
-return this.open().then(
-db=>new Promise((res,rej)=>{
-const r=db
-.transaction(CONFIG.STORE,'readonly')
-.objectStore(CONFIG.STORE)
-.get(key);
+return this.open().then(db=>new Promise((resolve,reject)=>{
+const tx=db.transaction(CONFIG.STORE,'readonly');
+const store=tx.objectStore(CONFIG.STORE);
+const r=store.get(key);
 
-r.onsuccess=()=>res(r.result);
-r.onerror=()=>rej(r.error);
-})
-);
+r.onsuccess=()=>resolve(r.result);
+r.onerror=()=>reject(r.error||new Error('IndexedDB 读取失败'));
+}));
 },
 
 set(key,value){
-return this.open().then(
-db=>new Promise((res,rej)=>{
-const tx=db.transaction(
-CONFIG.STORE,
-'readwrite'
-);
+return this.open().then(db=>new Promise((resolve,reject)=>{
+const tx=db.transaction(CONFIG.STORE,'readwrite');
+const store=tx.objectStore(CONFIG.STORE);
 
-tx.objectStore(CONFIG.STORE)
-.put(value,key);
+let request;
 
-tx.oncomplete=()=>res();
+try{
+request=store.put(value,key);
+}catch(e){
+reject(e);
+return;
+}
+
+request.onerror=()=>{
+reject(request.error||new Error('IndexedDB 写入失败'));
+};
+
+tx.oncomplete=()=>{
+resolve();
+};
 
 tx.onerror=()=>{
-rej(
-tx.error||
-new Error('IndexedDB 写入失败')
-);
+reject(tx.error||request.error||new Error('IndexedDB 写入失败'));
 };
 
 tx.onabort=()=>{
-rej(
+reject(
 tx.error||
+request.error||
 new Error('IndexedDB 写入中止')
 );
 };
-})
-);
-},
-
-getVideos(){
-return this.open().then(
-db=>new Promise((res,rej)=>{
-const tx=db.transaction(
-CONFIG.VIDEO_STORE,
-'readonly'
-);
-
-const store=tx.objectStore(
-CONFIG.VIDEO_STORE
-);
-
-const r=store.getAll();
-
-r.onsuccess=()=>{
-res(
-Array.isArray(r.result)
-?r.result
-:[]
-);
-};
-
-r.onerror=()=>{
-rej(
-r.error||
-new Error('视频读取失败')
-);
-};
-})
-);
-},
-
-getVideo(id){
-return this.open().then(
-db=>new Promise((res,rej)=>{
-const r=db
-.transaction(
-CONFIG.VIDEO_STORE,
-'readonly'
-)
-.objectStore(CONFIG.VIDEO_STORE)
-.get(id);
-
-r.onsuccess=()=>res(r.result);
-r.onerror=()=>rej(r.error);
-})
-);
-},
-
-putVideo(video){
-return this.open().then(
-db=>new Promise((res,rej)=>{
-const tx=db.transaction(
-CONFIG.VIDEO_STORE,
-'readwrite'
-);
-
-tx.objectStore(
-CONFIG.VIDEO_STORE
-).put(video);
-
-tx.oncomplete=()=>res();
-
-tx.onerror=()=>{
-rej(
-tx.error||
-new Error('视频保存失败')
-);
-};
-
-tx.onabort=()=>{
-rej(
-tx.error||
-new Error('视频保存中止')
-);
-};
-})
-);
-},
-
-putVideos(videos){
-if(!Array.isArray(videos)||!videos.length){
-return Promise.resolve();
-}
-
-return this.open().then(
-db=>new Promise((res,rej)=>{
-const tx=db.transaction(
-CONFIG.VIDEO_STORE,
-'readwrite'
-);
-
-const store=tx.objectStore(
-CONFIG.VIDEO_STORE
-);
-
-for(const video of videos){
-store.put(video);
-}
-
-tx.oncomplete=()=>res();
-
-tx.onerror=()=>{
-rej(
-tx.error||
-new Error('批量视频保存失败')
-);
-};
-
-tx.onabort=()=>{
-rej(
-tx.error||
-new Error('批量视频保存中止')
-);
-};
-})
-);
-},
-
-deleteVideo(id){
-return this.open().then(
-db=>new Promise((res,rej)=>{
-const tx=db.transaction(
-CONFIG.VIDEO_STORE,
-'readwrite'
-);
-
-tx.objectStore(
-CONFIG.VIDEO_STORE
-).delete(id);
-
-tx.oncomplete=()=>res();
-
-tx.onerror=()=>{
-rej(
-tx.error||
-new Error('视频删除失败')
-);
-};
-})
-);
-},
-
-deleteVideos(ids){
-if(!Array.isArray(ids)||!ids.length){
-return Promise.resolve();
-}
-
-return this.open().then(
-db=>new Promise((res,rej)=>{
-const tx=db.transaction(
-CONFIG.VIDEO_STORE,
-'readwrite'
-);
-
-const store=tx.objectStore(
-CONFIG.VIDEO_STORE
-);
-
-ids.forEach(id=>{
-store.delete(id);
-});
-
-tx.oncomplete=()=>res();
-
-tx.onerror=()=>{
-rej(
-tx.error||
-new Error('批量删除失败')
-);
-};
-
-tx.onabort=()=>{
-rej(
-tx.error||
-new Error('批量删除中止')
-);
-};
-})
-);
+}));
 }
 };
 
@@ -328,27 +123,15 @@ return d.innerHTML;
 }
 
 function formatSize(n=0){
-if(n<1024){
-return n+' B';
-}
-
-if(n<1048576){
-return(n/1024).toFixed(1)+' KB';
-}
-
-if(n<1073741824){
-return(n/1048576).toFixed(2)+' MB';
-}
-
+if(n<1024)return n+' B';
+if(n<1048576)return(n/1024).toFixed(1)+' KB';
+if(n<1073741824)return(n/1048576).toFixed(2)+' MB';
 return(n/1073741824).toFixed(2)+' GB';
 }
 
 function formatDate(ts){
 const d=new Date(ts);
-
-return `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(
-d.getMinutes()
-).padStart(2,'0')}`;
+return `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
 function formatFullDate(ts){
@@ -361,7 +144,6 @@ return CONFIG.ICONS[c]||'🏷️';
 
 function toast(msg,type='success'){
 const t=document.getElementById('toast');
-
 if(!t)return;
 
 t.textContent=msg;
@@ -399,23 +181,13 @@ state.currentPlayerId=null;
 }
 
 function closeSidebar(){
-document
-.getElementById('sidebar')
-?.classList.remove('open');
-
-document
-.getElementById('sidebarOverlay')
-?.classList.remove('active');
+document.getElementById('sidebar')?.classList.remove('open');
+document.getElementById('sidebarOverlay')?.classList.remove('active');
 }
 
 function toggleSidebar(){
-document
-.getElementById('sidebar')
-?.classList.toggle('open');
-
-document
-.getElementById('sidebarOverlay')
-?.classList.toggle('active');
+document.getElementById('sidebar')?.classList.toggle('open');
+document.getElementById('sidebarOverlay')?.classList.toggle('active');
 }
 
 function asBlob(v){
@@ -430,30 +202,23 @@ return v.blob;
 if(v.blob){
 return new Blob(
 [v.blob],
-{
-type:v.type||'video/mp4'
-}
+{type:v.type||'video/mp4'}
 );
 }
 
 if(v.buffer instanceof ArrayBuffer){
 return new Blob(
 [v.buffer],
-{
-type:v.type||'video/mp4'
-}
+{type:v.type||'video/mp4'}
 );
 }
 
-if(
-typeof v.data==='string'&&
-v.data.startsWith('data:')
-){
+if(typeof v.data==='string'&&v.data.startsWith('data:')){
 return dataURLToBlob(v.data);
 }
 
 }catch(e){
-console.error(e);
+console.error('Blob 转换失败:',e);
 }
 
 return null;
@@ -484,17 +249,13 @@ state.objectUrls.delete(id);
 }
 
 function normalizeTags(tags){
-if(!Array.isArray(tags)){
-return [];
-}
+if(!Array.isArray(tags))return [];
 
-return[
-...new Set(
+return [...new Set(
 tags
 .map(t=>String(t).trim())
 .filter(Boolean)
-)
-];
+)];
 }
 
 function getAllTags(){
@@ -506,13 +267,8 @@ tags.add(t);
 });
 });
 
-return[
-...tags
-].sort(
-(a,b)=>a.localeCompare(
-b,
-'zh-CN'
-)
+return [...tags].sort(
+(a,b)=>a.localeCompare(b,'zh-CN')
 );
 }
 
@@ -522,30 +278,20 @@ const tags=new Set();
 state.data.videos.forEach(v=>{
 const cat=v.category||'未分类';
 
-if(
-category==='全部'||
-cat===category
-){
+if(category==='全部'||cat===category){
 normalizeTags(v.tags).forEach(t=>{
 tags.add(t);
 });
 }
 });
 
-return[
-...tags
-].sort(
-(a,b)=>a.localeCompare(
-b,
-'zh-CN'
-)
+return [...tags].sort(
+(a,b)=>a.localeCompare(b,'zh-CN')
 );
 }
 
 function videoMatchesTag(v){
-if(state.currentTag==='全部'){
-return true;
-}
+if(state.currentTag==='全部')return true;
 
 return normalizeTags(v.tags)
 .includes(state.currentTag);
@@ -556,162 +302,20 @@ let videos=
 state.currentCat==='全部'
 ?state.data.videos
 :state.data.videos.filter(
-v=>
-(v.category||'未分类')===
-state.currentCat
+v=>(v.category||'未分类')===state.currentCat
 );
 
 if(state.currentTag!=='全部'){
-videos=videos.filter(
-videoMatchesTag
-);
+videos=videos.filter(videoMatchesTag);
 }
 
 return videos;
 }
 
-function normalizeVideo(v){
-if(!v||typeof v!=='object'){
-return null;
-}
-
-if(!v.id){
-v.id=
-Date.now().toString(36)+
-Math.random()
-.toString(36)
-.slice(2,10);
-}
-
-if(!v.name){
-v.name='未命名视频.mp4';
-}
-
-if(!v.category){
-v.category='未分类';
-}
-
-if(!v.type){
-v.type='video/mp4';
-}
-
-if(!v.createdAt){
-v.createdAt=Date.now();
-}
-
-v.tags=normalizeTags(v.tags);
-
-if(!v.size){
-const b=asBlob(v);
-
-if(b){
-v.size=b.size;
-}
-}
-
-return v;
-}
-
-function repairLegacyData(){
-if(!Array.isArray(
-state.data.videos
-)){
-state.data.videos=[];
-}
-
-state.data.videos=
-state.data.videos
-.map(normalizeVideo)
-.filter(Boolean);
-}
-
-async function migrateLegacyVideos(){
-const oldData=await IDB.get(
-CONFIG.DB_KEY
-);
-
-if(
-!oldData||
-!Array.isArray(
-oldData.videos
-)||
-!oldData.videos.length
-){
-return [];
-}
-
-let existing=[];
-
-try{
-existing=await IDB.getVideos();
-}catch(e){
-console.warn(
-'读取新视频存储失败',
-e
-);
-}
-
-if(existing.length){
-return existing;
-}
-
-const legacyVideos=
-oldData.videos
-.map(normalizeVideo)
-.filter(Boolean);
-
-if(!legacyVideos.length){
-return [];
-}
-
-toast(
-`正在迁移 ${legacyVideos.length} 个旧视频…`
-);
-
-let success=0;
-
-for(const video of legacyVideos){
-try{
-await IDB.putVideo(video);
-success++;
-}catch(e){
-console.error(
-'迁移视频失败',
-video.id,
-e
-);
-}
-}
-
-try{
-await IDB.set(
-CONFIG.DB_KEY,
-{
-version:4,
-migrated:true
-}
-);
-}catch{}
-
-toast(
-success===legacyVideos.length
-?`已迁移 ${success} 个视频`
-:`已迁移 ${success}/${legacyVideos.length} 个视频`,
-success===legacyVideos.length
-?'success'
-:'error'
-);
-
-return await IDB.getVideos();
-}
-
 async function loadData(){
 try{
 
-const c=
-localStorage.getItem(
-CONFIG.CAT_KEY
-);
+const c=localStorage.getItem(CONFIG.CAT_KEY);
 
 state.cats=c
 ?JSON.parse(c)
@@ -722,39 +326,21 @@ if(
 !state.cats.includes('全部')||
 !state.cats.includes('未分类')
 ){
-state.cats=[
-...CONFIG.DEFAULT_CATS
-];
+state.cats=[...CONFIG.DEFAULT_CATS];
 }
 
 }catch{
-state.cats=[
-...CONFIG.DEFAULT_CATS
-];
+state.cats=[...CONFIG.DEFAULT_CATS];
 }
 
 try{
 
-let videos=[];
+const d=await IDB.get(CONFIG.DB_KEY);
 
-try{
-videos=await IDB.getVideos();
-}catch(e){
-console.warn(
-'新视频存储读取失败',
-e
-);
-}
-
-if(!videos.length){
-videos=await migrateLegacyVideos();
-}
-
-state.data={
-videos:Array.isArray(videos)
-?videos
-:[]
-};
+state.data=
+d&&Array.isArray(d.videos)
+?d
+:{videos:[]};
 
 repairLegacyData();
 
@@ -768,17 +354,14 @@ updateBatchBar();
 
 console.error(e);
 
-state.data={
-videos:[]
-};
+state.data={videos:[]};
 
 renderCats();
 renderFilterBar();
 renderVideos();
 
 toast(
-'视频库加载失败：'+
-e.message,
+'视频库加载失败：'+e.message,
 'error'
 );
 }
@@ -789,69 +372,14 @@ try{
 
 localStorage.setItem(
 CONFIG.CAT_KEY,
-JSON.stringify(
-state.cats
-)
+JSON.stringify(state.cats)
 );
 
 return true;
 
 }catch{
 
-toast(
-'分类保存失败',
-'error'
-);
-
-return false;
-}
-}
-
-async function saveVideo(video){
-try{
-
-const normalized=
-normalizeVideo(
-video
-);
-
-if(!normalized){
-throw new Error(
-'视频数据无效'
-);
-}
-
-await IDB.putVideo(
-normalized
-);
-
-const index=
-state.data.videos.findIndex(
-v=>v.id===normalized.id
-);
-
-if(index>=0){
-state.data.videos[index]=
-normalized;
-}else{
-state.data.videos.push(
-normalized
-);
-}
-
-await updateStorage();
-
-return true;
-
-}catch(e){
-
-console.error(e);
-
-toast(
-'视频保存失败：'+
-e.message,
-'error'
-);
+toast('分类保存失败','error');
 
 return false;
 }
@@ -860,8 +388,9 @@ return false;
 async function saveVideos(){
 try{
 
-await IDB.putVideos(
-state.data.videos
+await IDB.set(
+CONFIG.DB_KEY,
+state.data
 );
 
 await updateStorage();
@@ -870,11 +399,10 @@ return true;
 
 }catch(e){
 
-console.error(e);
+console.error('保存视频失败:',e);
 
 toast(
-'视频保存失败：'+
-e.message,
+'视频保存失败：'+e.message,
 'error'
 );
 
@@ -885,9 +413,8 @@ return false;
 async function updateStorage(){
 let used=0;
 
-for(
-const v of state.data.videos
-){
+for(const v of state.data.videos){
+
 const b=asBlob(v);
 
 used+=
@@ -896,33 +423,22 @@ b
 :Number(v.size)||0;
 }
 
-const text=
-document.getElementById(
-'storageText'
-);
+const text=document.getElementById('storageText');
 
 if(text){
 text.textContent=
-`视频占用 ${formatSize(
-used
-)} · ${
-state.data.videos.length
-} 个`;
+`视频占用 ${formatSize(used)} · ${state.data.videos.length} 个`;
 }
 
 try{
 
 const q=
-await navigator
-.storage
-?.estimate?.();
+await navigator.storage?.estimate?.();
 
 const quota=q?.quota||0;
 
 const fill=
-document.getElementById(
-'storageFill'
-);
+document.getElementById('storageFill');
 
 if(fill){
 
@@ -941,14 +457,12 @@ used/den*100
 
 fill.classList.toggle(
 'warning',
-!!quota&&
-used/quota>.7
+!!quota&&used/quota>.7
 );
 
 fill.classList.toggle(
 'danger',
-!!quota&&
-used/quota>.9
+!!quota&&used/quota>.9
 );
 }
 
@@ -956,10 +470,7 @@ used/quota>.9
 }
 
 function renderCats(){
-const list=
-document.getElementById(
-'catList'
-);
+const list=document.getElementById('catList');
 
 if(!list)return;
 
@@ -971,86 +482,58 @@ const count=
 c==='全部'
 ?state.data.videos.length
 :state.data.videos.filter(
-v=>
-(v.category||
-'未分类')===c
+v=>(v.category||'未分类')===c
 ).length;
 
-const d=
-document.createElement('div');
+const d=document.createElement('div');
 
 d.className=
 'cat-item'+
-(
-c===state.currentCat
-?' active'
-:''
-);
+(c===state.currentCat?' active':'');
 
 d.innerHTML=`
-<span class="cat-icon">
-${icon(c)}
-</span>
-
-<span class="cat-name">
-${escapeHtml(c)}
-</span>
-
-<span class="cat-count">
-${count}
-</span>
-
+<span class="cat-icon">${icon(c)}</span>
+<span class="cat-name">${escapeHtml(c)}</span>
+<span class="cat-count">${count}</span>
 ${
-c!=='全部'&&
-c!=='未分类'
-?`
-<button
-class="cat-del-btn"
-title="删除分类">
-−
-</button>
-`
+c!=='全部'&&c!=='未分类'
+?'<button class="cat-del-btn" title="删除分类">−</button>'
 :''
 }
 `;
 
-d.addEventListener(
-'click',
-e=>{
+d.addEventListener('click',e=>{
+
 if(
-!e.target.closest(
-'.cat-del-btn'
-)
+!e.target.closest('.cat-del-btn')
 ){
 switchCat(c);
 }
-}
-);
 
-d.querySelector(
-'.cat-del-btn'
-)?.addEventListener(
-'click',
-e=>{
+});
+
+d.querySelector('.cat-del-btn')
+?.addEventListener('click',e=>{
+
 e.stopPropagation();
+
 deleteCat(c);
-}
-);
+
+});
 
 list.appendChild(d);
 });
 }
 
 function switchCat(c){
+
 state.currentCat=c;
 state.currentTag='全部';
 state.selectedTags.clear();
 state.selectedIds.clear();
 
 const title=
-document.getElementById(
-'pageTitle'
-);
+document.getElementById('pageTitle');
 
 if(title){
 title.textContent=
@@ -1063,13 +546,20 @@ renderCats();
 renderFilterBar();
 renderVideos();
 updateBatchBar();
+
 closeSidebar();
 }
 
 function injectBaseStyle(){
-if(document.getElementById('videoLibraryDynamicStyle'))return;
+
+if(
+document.getElementById(
+'videoLibraryDynamicStyle'
+)
+)return;
 
 const style=document.createElement('style');
+
 style.id='videoLibraryDynamicStyle';
 
 style.textContent=`
@@ -1151,127 +641,6 @@ opacity:.65;
 margin-right:2px;
 }
 
-/* =========================
-   视频选择框
-========================= */
-
-.video-select{
-position:absolute;
-top:8px;
-left:8px;
-z-index:8;
-width:30px;
-height:30px;
-border-radius:8px;
-background:rgba(0,0,0,.68);
-display:flex;
-align-items:center;
-justify-content:center;
-cursor:pointer;
-box-sizing:border-box;
-}
-
-.video-select input{
-width:17px;
-height:17px;
-margin:0;
-cursor:pointer;
-}
-
-.video-card.selected{
-outline:2px solid rgba(255,255,255,.65);
-outline-offset:1px;
-}
-
-.video-card.selected .video-thumb{
-box-shadow:
-inset 0 0 0 2px rgba(255,255,255,.35);
-}
-
-/* =========================
-   视频编辑按钮
-========================= */
-
-.video-edit-btn{
-position:absolute;
-right:8px;
-top:8px;
-z-index:8;
-width:30px;
-height:30px;
-padding:0;
-border:0;
-border-radius:8px;
-background:rgba(0,0,0,.68);
-color:#fff;
-cursor:pointer;
-font-size:14px;
-}
-
-.video-edit-btn:hover{
-background:rgba(0,0,0,.85);
-}
-
-.video-edit-panel{
-display:none;
-position:absolute;
-left:8px;
-right:8px;
-bottom:8px;
-z-index:12;
-padding:10px;
-border-radius:10px;
-background:rgba(20,20,20,.97);
-border:1px solid rgba(255,255,255,.14);
-box-shadow:0 8px 30px rgba(0,0,0,.45);
-}
-
-.video-edit-panel.show{
-display:block;
-}
-
-.video-edit-row{
-display:flex;
-gap:6px;
-align-items:center;
-}
-
-.video-edit-row select,
-.video-edit-row input{
-flex:1;
-min-width:0;
-height:32px;
-box-sizing:border-box;
-background:#181818;
-border:1px solid #3a3a3a;
-border-radius:7px;
-color:#fff;
-padding:0 8px;
-outline:none;
-font-size:12px;
-}
-
-.video-edit-actions{
-display:flex;
-gap:6px;
-margin-top:7px;
-}
-
-.video-edit-actions button{
-flex:1;
-border:1px solid #3a3a3a;
-background:#242424;
-color:#ddd;
-border-radius:7px;
-padding:6px 8px;
-font-size:11px;
-cursor:pointer;
-}
-
-/* =========================
-   时间轴
-========================= */
-
 .video-timeline{
 display:flex;
 flex-direction:column;
@@ -1319,7 +688,6 @@ box-shadow:0 0 0 4px rgba(255,255,255,.05);
 }
 
 .timeline-card{
-position:relative;
 display:grid;
 grid-template-columns:150px minmax(0,1fr);
 gap:14px;
@@ -1363,30 +731,6 @@ color:#777;
 margin-top:6px;
 }
 
-.timeline-select{
-position:absolute;
-top:16px;
-left:8px;
-z-index:9;
-width:28px;
-height:28px;
-display:flex;
-align-items:center;
-justify-content:center;
-border-radius:7px;
-background:rgba(0,0,0,.7);
-}
-
-.timeline-select input{
-width:16px;
-height:16px;
-margin:0;
-}
-
-/* =========================
-   标签视图
-========================= */
-
 .tag-view{
 display:flex;
 flex-direction:column;
@@ -1418,125 +762,16 @@ font-weight:400;
 .tag-group-videos{
 display:grid;
 grid-template-columns:
-repeat(auto-fill,minmax(170px,1fr));
+repeat(
+auto-fill,
+minmax(170px,1fr)
+);
 gap:12px;
 }
 
-/* =========================
-   批量操作栏
-========================= */
-
-#batchActionBar{
-position:fixed;
-left:50%;
-bottom:22px;
-transform:translateX(-50%);
-z-index:100;
-display:none;
-align-items:center;
-gap:7px;
-padding:10px 12px;
-background:#242424;
-border:1px solid #444;
-border-radius:12px;
-box-shadow:0 8px 30px rgba(0,0,0,.45);
-max-width:calc(100vw - 24px);
-box-sizing:border-box;
+.untagged-label{
+color:#888;
 }
-
-#batchActionBar button{
-white-space:nowrap;
-}
-
-#batchCount{
-font-size:13px;
-color:#e0e0e0;
-white-space:nowrap;
-margin-right:3px;
-}
-
-.batch-more-btn{
-border:1px solid #444;
-background:#303030;
-color:#ddd;
-border-radius:7px;
-padding:7px 9px;
-font-size:11px;
-cursor:pointer;
-}
-
-.batch-more-panel{
-position:absolute;
-bottom:calc(100% + 8px);
-right:0;
-display:none;
-min-width:180px;
-padding:7px;
-background:#242424;
-border:1px solid #444;
-border-radius:10px;
-box-shadow:0 8px 30px rgba(0,0,0,.45);
-}
-
-.batch-more-panel.show{
-display:block;
-}
-
-.batch-more-panel button{
-display:block;
-width:100%;
-text-align:left;
-border:0;
-background:transparent;
-color:#ddd;
-padding:9px;
-border-radius:7px;
-cursor:pointer;
-font-size:12px;
-}
-
-.batch-more-panel button:hover{
-background:rgba(255,255,255,.08);
-}
-
-/* =========================
-   批量编辑弹窗
-========================= */
-
-.batch-edit-group{
-margin-bottom:14px;
-}
-
-.batch-edit-label{
-display:block;
-font-size:12px;
-color:#aaa;
-margin-bottom:7px;
-}
-
-.batch-edit-group select,
-.batch-edit-group input{
-width:100%;
-box-sizing:border-box;
-height:38px;
-background:#151515;
-border:1px solid #383838;
-border-radius:8px;
-color:#fff;
-padding:0 10px;
-outline:none;
-}
-
-.batch-edit-help{
-font-size:10px;
-color:#777;
-margin-top:5px;
-line-height:1.5;
-}
-
-/* =========================
-   标签编辑器
-========================= */
 
 .tag-editor{
 display:flex;
@@ -1564,14 +799,6 @@ border-radius:7px;
 padding:7px 10px;
 cursor:pointer;
 }
-
-.untagged-label{
-color:#888;
-}
-
-/* =========================
-   上传标签
-========================= */
 
 .upload-tags{
 margin-top:10px;
@@ -1611,6 +838,116 @@ cursor:pointer;
 font-size:11px;
 }
 
+.batch-edit-section{
+margin-top:10px;
+}
+
+.batch-edit-row{
+display:flex;
+gap:8px;
+align-items:center;
+flex-wrap:wrap;
+}
+
+.batch-edit-row select,
+.batch-edit-row input{
+min-height:38px;
+box-sizing:border-box;
+background:#151515;
+border:1px solid #333;
+border-radius:8px;
+color:#fff;
+padding:7px 9px;
+}
+
+.batch-tag-list{
+display:flex;
+flex-wrap:wrap;
+gap:6px;
+margin-top:8px;
+}
+
+.batch-tag-chip{
+display:inline-flex;
+align-items:center;
+gap:4px;
+padding:5px 8px;
+border-radius:999px;
+background:#202020;
+border:1px solid #333;
+color:#ccc;
+font-size:11px;
+cursor:pointer;
+}
+
+.batch-tag-chip.active{
+border-color:#777;
+background:#303030;
+color:#fff;
+}
+
+.video-edit-btn{
+position:absolute;
+right:8px;
+bottom:8px;
+z-index:5;
+border:1px solid rgba(255,255,255,.15);
+background:rgba(0,0,0,.7);
+color:#fff;
+border-radius:7px;
+padding:5px 8px;
+font-size:11px;
+cursor:pointer;
+}
+
+.video-select{
+position:absolute;
+top:8px;
+left:8px;
+z-index:6;
+width:30px;
+height:30px;
+border-radius:8px;
+background:rgba(0,0,0,.65);
+display:flex;
+align-items:center;
+justify-content:center;
+cursor:pointer;
+}
+
+.video-select input{
+width:18px;
+height:18px;
+cursor:pointer;
+margin:0;
+}
+
+#batchActionBar{
+position:fixed;
+left:50%;
+bottom:22px;
+transform:translateX(-50%);
+z-index:90;
+display:none;
+align-items:center;
+gap:8px;
+padding:10px 12px;
+background:#242424;
+border:1px solid #444;
+border-radius:12px;
+box-shadow:0 8px 30px rgba(0,0,0,.45);
+max-width:calc(100vw - 24px);
+}
+
+#batchActionBar button{
+white-space:nowrap;
+}
+
+.batch-edit-btn{
+padding:7px 10px;
+font-size:12px;
+}
+
 @media(max-width:600px){
 
 .timeline-item{
@@ -1648,32 +985,22 @@ font-size:11px;
 }
 
 #batchActionBar{
-bottom:12px!important;
-padding:8px!important;
-gap:5px!important;
+bottom:12px;
+padding:8px;
+gap:5px;
 }
 
 #batchActionBar button{
-padding:7px 8px!important;
-font-size:11px!important;
+padding:7px 8px;
+font-size:11px;
 }
 
-#batchCount{
-font-size:11px!important;
+#batchActionBar #batchCount{
+font-size:11px;
 }
 
 .video-select{
-display:flex!important;
-}
-
-.timeline-select{
-display:flex!important;
-}
-
-.video-edit-panel{
-left:5px;
-right:5px;
-bottom:5px;
+display:flex;
 }
 
 }
@@ -1683,6 +1010,7 @@ document.head.appendChild(style);
 }
 
 function renderFilterBar(){
+
 injectBaseStyle();
 
 let bar=
@@ -1693,19 +1021,14 @@ document.getElementById(
 if(!bar){
 
 const content=
-document.getElementById(
-'content'
-);
+document.getElementById('content');
 
 if(!content)return;
 
 bar=document.createElement('div');
 
-bar.id=
-'videoLibraryTools';
-
-bar.className=
-'video-library-tools';
+bar.id='videoLibraryTools';
+bar.className='video-library-tools';
 
 content.parentNode.insertBefore(
 bar,
@@ -1731,9 +1054,7 @@ modes.forEach(
 ([mode,label])=>{
 
 const btn=
-document.createElement(
-'button'
-);
+document.createElement('button');
 
 btn.className=
 'video-view-btn'+
@@ -1762,9 +1083,7 @@ viewSwitch.appendChild(btn);
 }
 );
 
-bar.appendChild(
-viewSwitch
-);
+bar.appendChild(viewSwitch);
 
 const tags=
 getCategoryTags(
@@ -1774,31 +1093,23 @@ state.currentCat
 if(tags.length){
 
 const tagFilter=
-document.createElement(
-'div'
-);
+document.createElement('div');
 
 tagFilter.className=
 'video-tag-filter';
 
 const label=
-document.createElement(
-'span'
-);
+document.createElement('span');
 
 label.style.cssText=
 'font-size:11px;color:#777';
 
 label.textContent='标签';
 
-tagFilter.appendChild(
-label
-);
+tagFilter.appendChild(label);
 
 const all=
-document.createElement(
-'button'
-);
+document.createElement('button');
 
 all.className=
 'video-tag-chip'+
@@ -1827,9 +1138,7 @@ tagFilter.appendChild(all);
 tags.forEach(tag=>{
 
 const btn=
-document.createElement(
-'button'
-);
+document.createElement('button');
 
 btn.className=
 'video-tag-chip'+
@@ -1857,24 +1166,18 @@ tagFilter.appendChild(btn);
 
 });
 
-bar.appendChild(
-tagFilter
-);
+bar.appendChild(tagFilter);
 }
 }
 
 function renderVideos(){
+
 const box=
-document.getElementById(
-'content'
-);
+document.getElementById('content');
 
 if(!box)return;
 
-cleanupSelection();
-
-const vs=
-getCurrentVideos();
+const vs=getCurrentVideos();
 
 box.innerHTML='';
 
@@ -1899,58 +1202,50 @@ return;
 
 if(state.viewMode==='timeline'){
 
-renderTimeline(
-vs,
-box
-);
+renderTimeline(vs,box);
 
-}else if(
-state.viewMode==='tags'
-){
+}else if(state.viewMode==='tags'){
 
-renderTagView(
-vs,
-box
-);
+renderTagView(vs,box);
 
 }else{
 
-renderGrid(
-vs,
-box
-);
+renderGrid(vs,box);
 
 }
 
 updateBatchBar();
 }
 
-function createSelectCheckbox(v,extraClass=''){
+function toggleVideoSelection(id,checked){
+
+if(checked){
+state.selectedIds.add(id);
+}else{
+state.selectedIds.delete(id);
+}
+
+updateBatchBar();
+}
+
+function createVideoSelect(v){
+
 const label=
 document.createElement('label');
 
-label.className=
-`video-select ${extraClass}`;
-
+label.className='video-select';
 label.title='选择视频';
 
 const input=
-document.createElement(
-'input'
-);
+document.createElement('input');
 
 input.type='checkbox';
-
 input.checked=
-state.selectedIds.has(
-v.id
-);
+state.selectedIds.has(v.id);
 
 input.addEventListener(
 'click',
-e=>{
-e.stopPropagation();
-}
+e=>e.stopPropagation()
 );
 
 input.addEventListener(
@@ -1959,204 +1254,237 @@ e=>{
 
 e.stopPropagation();
 
-if(e.target.checked){
-
-state.selectedIds.add(
-v.id
+toggleVideoSelection(
+v.id,
+e.target.checked
 );
 
-}else{
-
-state.selectedIds.delete(
-v.id
-);
-
-}
-
+renderVideos();
 updateBatchBar();
 
-updateSelectionVisuals();
-
 }
 );
 
-label.appendChild(
-input
-);
+label.appendChild(input);
 
 return label;
 }
 
-function updateSelectionVisuals(){
+async function updateVideoMetadata(
+id,
+category,
+tags
+){
 
-document
-.querySelectorAll(
-'[data-video-id]'
-)
-.forEach(el=>{
-
-const id=
-el.dataset.videoId;
-
-el.classList.toggle(
-'selected',
-state.selectedIds.has(
-id
-)
+const v=
+state.data.videos.find(
+x=>x.id===id
 );
 
-const checkbox=
-el.querySelector(
-'input[type="checkbox"]'
-);
+if(!v)return false;
 
-if(checkbox){
-checkbox.checked=
-state.selectedIds.has(
-id
-);
+const oldCategory=
+v.category||'未分类';
+
+const oldTags=
+normalizeTags(v.tags);
+
+v.category=
+category||'未分类';
+
+v.tags=
+normalizeTags(tags);
+
+if(await saveVideos()){
+
+renderCats();
+renderFilterBar();
+renderVideos();
+updateBatchBar();
+
+return true;
 }
 
-});
+v.category=oldCategory;
+v.tags=oldTags;
+
+return false;
 }
 
-function createEditButton(v){
-const btn=
-document.createElement(
-'button'
+function openVideoEdit(v){
+
+const existing=
+document.getElementById(
+'videoEditModal'
 );
 
-btn.className=
-'video-edit-btn';
-
-btn.type='button';
-
-btn.title='编辑分类和标签';
-
-btn.textContent='✎';
-
-btn.addEventListener(
-'click',
-e=>{
-
-e.stopPropagation();
-
-openVideoEditor(
-v,
-btn.closest(
-'[data-video-id]'
-)
-);
-
-}
-);
-
-return btn;
+if(existing){
+existing.remove();
 }
 
-function createVideoEditPanel(v){
-const panel=
-document.createElement(
-'div'
-);
+const modal=
+document.createElement('div');
 
-panel.className=
-'video-edit-panel';
+modal.className='modal-overlay';
+modal.id='videoEditModal';
 
-panel.innerHTML=`
-<div class="video-edit-row">
+const modalBox=
+document.createElement('div');
 
-<select class="edit-category">
-${state.cats
+modalBox.className='modal modal-sm';
+
+const categories=
+state.cats
 .filter(c=>c!=='全部')
 .map(c=>`
 <option value="${escapeHtml(c)}"
-${(
-v.category||'未分类'
-)===c?'selected':''}>
+${
+(v.category||'未分类')===c
+?'selected'
+:''
+}>
 ${escapeHtml(c)}
 </option>
 `)
-.join('')}
+.join('');
+
+modalBox.innerHTML=`
+<div class="modal-header">
+<h3>✏️ 编辑视频</h3>
+<button
+class="modal-close"
+type="button"
+aria-label="关闭">
+×
+</button>
+</div>
+
+<div class="modal-body">
+
+<div class="form-group">
+
+<label>视频</label>
+
+<div style="
+font-size:13px;
+color:#aaa;
+word-break:break-all;
+">
+${escapeHtml(v.name)}
+</div>
+
+</div>
+
+<div class="form-group">
+
+<label for="editVideoCategory">
+分类
+</label>
+
+<select id="editVideoCategory">
+${categories}
 </select>
 
 </div>
 
-<div
-class="video-tags"
-data-edit-tags>
-${normalizeTags(v.tags)
-.map(tag=>`
-<span
-class="video-tag"
-data-tag="${escapeHtml(tag)}">
-${escapeHtml(tag)}
-<button
-type="button"
-class="remove-inline-tag"
-style="
-border:0;
-background:none;
-color:#aaa;
-margin-left:3px;
-padding:0;
-cursor:pointer;
-">
-×
-</button>
-</span>
-`)
-.join('')}
-</div>
+<div class="form-group">
+
+<label>标签</label>
 
 <div class="tag-editor">
 
 <input
-class="edit-tag-input"
+id="editVideoTagInput"
+type="text"
 maxlength="20"
-placeholder="添加标签">
+placeholder="输入标签后添加"
+>
 
 <button
 type="button"
-class="edit-add-tag">
+id="editVideoTagAdd">
 添加
 </button>
 
 </div>
 
-<div class="video-edit-actions">
+<div
+class="upload-tag-list"
+id="editVideoTagList">
+</div>
+
+</div>
+
+</div>
+
+<div class="modal-footer">
 
 <button
+class="btn btn-secondary"
 type="button"
-class="edit-save">
-保存
+id="editVideoCancel">
+取消
 </button>
 
 <button
+class="btn btn-primary"
 type="button"
-class="edit-cancel">
-取消
+id="editVideoSave">
+保存
 </button>
 
 </div>
 `;
 
-const tagBox=
-panel.querySelector(
-'[data-edit-tags]'
+modal.appendChild(modalBox);
+document.body.appendChild(modal);
+
+let tags=
+normalizeTags(v.tags);
+
+const tagList=
+modal.querySelector(
+'#editVideoTagList'
 );
 
-panel
-.querySelector(
-'.edit-add-tag'
-)
-.addEventListener(
+const renderEditTags=()=>{
+
+tagList.innerHTML='';
+
+tags.forEach(tag=>{
+
+const btn=
+document.createElement('button');
+
+btn.type='button';
+btn.className=
+'upload-tag-remove';
+
+btn.textContent=
+`#${tag} ×`;
+
+btn.addEventListener(
 'click',
 ()=>{
+tags=
+tags.filter(
+x=>x!==tag
+);
+
+renderEditTags();
+}
+);
+
+tagList.appendChild(btn);
+
+});
+};
+
+const addTag=()=>{
 
 const input=
-panel.querySelector(
-'.edit-tag-input'
+modal.querySelector(
+'#editVideoTagInput'
 );
 
 const tag=
@@ -2164,28 +1492,25 @@ input.value.trim();
 
 if(!tag)return;
 
-const current=
-getPanelTags(panel);
-
-if(!current.includes(tag)){
-current.push(tag);
+if(!tags.includes(tag)){
+tags.push(tag);
 }
-
-setPanelTags(
-panel,
-current
-);
 
 input.value='';
 
-}
+renderEditTags();
+};
+
+modal.querySelector(
+'#editVideoTagAdd'
+).addEventListener(
+'click',
+addTag
 );
 
-panel
-.querySelector(
-'.edit-tag-input'
-)
-.addEventListener(
+modal.querySelector(
+'#editVideoTagInput'
+).addEventListener(
 'keydown',
 e=>{
 
@@ -2193,298 +1518,150 @@ if(e.key==='Enter'){
 
 e.preventDefault();
 
-panel
-.querySelector(
-'.edit-add-tag'
-)
-.click();
+addTag();
 
 }
 
 }
 );
 
-panel
-.querySelector(
-'.edit-save'
-)
-.addEventListener(
+modal.querySelector(
+'#editVideoCancel'
+).addEventListener(
 'click',
-async e=>{
+()=>{
+modal.remove();
+}
+);
 
-e.stopPropagation();
+modal.querySelector(
+'.modal-close'
+).addEventListener(
+'click',
+()=>{
+modal.remove();
+}
+);
+
+modal.addEventListener(
+'click',
+e=>{
+if(e.target===modal){
+modal.remove();
+}
+}
+);
+
+modal.querySelector(
+'#editVideoSave'
+).addEventListener(
+'click',
+async()=>{
+
+const btn=
+modal.querySelector(
+'#editVideoSave'
+);
 
 const category=
-panel.querySelector(
-'.edit-category'
-).value;
+modal.querySelector(
+'#editVideoCategory'
+).value||'未分类';
 
-const tags=
-getPanelTags(panel);
+btn.disabled=true;
+btn.textContent='保存中…';
 
-await updateVideoMeta(
+if(
+await updateVideoMetadata(
 v.id,
 category,
 tags
-);
-
-}
-);
-
-panel
-.querySelector(
-'.edit-cancel'
 )
-.addEventListener(
-'click',
-e=>{
-
-e.stopPropagation();
-
-panel.classList.remove(
-'show'
-);
-
-}
-);
-
-return panel;
-}
-
-function getPanelTags(panel){
-return[
-...panel.querySelectorAll(
-'[data-edit-tags] [data-tag]'
-)
-]
-.map(el=>
-el.dataset.tag
-)
-.filter(Boolean);
-}
-
-function setPanelTags(panel,tags){
-
-const box=
-panel.querySelector(
-'[data-edit-tags]'
-);
-
-if(!box)return;
-
-box.innerHTML='';
-
-normalizeTags(tags)
-.forEach(tag=>{
-
-const span=
-document.createElement(
-'span'
-);
-
-span.className=
-'video-tag';
-
-span.dataset.tag=
-tag;
-
-span.innerHTML=
-`${escapeHtml(tag)}
-<button
-type="button"
-class="remove-inline-tag"
-style="
-border:0;
-background:none;
-color:#aaa;
-margin-left:3px;
-padding:0;
-cursor:pointer;
-">
-×
-</button>`;
-
-span
-.querySelector(
-'.remove-inline-tag'
-)
-.addEventListener(
-'click',
-e=>{
-
-e.stopPropagation();
-
-span.remove();
-
-}
-);
-
-box.appendChild(
-span
-);
-
-});
-}
-
-function openVideoEditor(v,card){
-
-if(!card)return;
-
-let panel=
-card.querySelector(
-'.video-edit-panel'
-);
-
-if(!panel){
-
-panel=
-createVideoEditPanel(v);
-
-card.appendChild(
-panel
-);
-
-setPanelTags(
-panel,
-normalizeTags(v.tags)
-);
-
-}
-
-document
-.querySelectorAll(
-'.video-edit-panel.show'
-)
-.forEach(p=>{
-if(p!==panel){
-p.classList.remove(
-'show'
-);
-}
-});
-
-panel.classList.toggle(
-'show'
-);
-}
-
-async function updateVideoMeta(
-id,
-category,
-tags
 ){
 
-const video=
-state.data.videos.find(
-v=>v.id===id
-);
-
-if(!video)return;
-
-const oldCategory=
-video.category;
-
-const oldTags=
-normalizeTags(video.tags);
-
-video.category=
-category||'未分类';
-
-video.tags=
-normalizeTags(tags);
-
-if(await saveVideo(video)){
-
-renderCats();
-renderFilterBar();
-renderVideos();
+modal.remove();
 
 toast('视频信息已更新');
 
 }else{
 
-video.category=
-oldCategory;
-
-video.tags=
-oldTags;
+btn.disabled=false;
+btn.textContent='保存';
 
 }
+
+}
+);
+
+renderEditTags();
+
+openModal('videoEditModal');
+}
+
+function addVideoEditButton(card,v){
+
+const btn=
+document.createElement('button');
+
+btn.type='button';
+btn.className='video-edit-btn';
+btn.title='编辑分类和标签';
+btn.textContent='编辑';
+
+btn.addEventListener(
+'click',
+e=>{
+
+e.stopPropagation();
+
+openVideoEdit(v);
+
+}
+);
+
+card.querySelector(
+'.video-thumb'
+)?.appendChild(btn);
+
+return btn;
 }
 
 function renderGrid(vs,box){
 
-const grid=
-document.createElement(
-'div'
-);
+const grid=document.createElement('div');
 
-grid.className=
-'video-grid';
+grid.className='video-grid';
 
-vs.slice()
-.reverse()
-.forEach(v=>{
+vs.slice().reverse().forEach(v=>{
 
-const card=
-document.createElement(
-'div'
-);
+const card=document.createElement('div');
 
-card.className=
-'video-card';
+card.className='video-card';
 
-card.dataset.videoId=
-v.id;
+const src=videoUrl(v);
 
-if(
-state.selectedIds.has(
-v.id
-)
-){
-card.classList.add(
-'selected'
-);
-}
+const thumb=v.thumbnail||'';
 
-const src=
-videoUrl(v);
-
-const thumb=
-v.thumbnail||'';
+const checked=
+state.selectedIds.has(v.id);
 
 card.innerHTML=`
 <div class="video-thumb">
 
 ${
 thumb
-?`
-<img
+?`<img
 src="${escapeHtml(thumb)}"
-alt="视频缩略图">
-`
+alt="视频缩略图">`
 :
 (
 src
-?`
-<video
-muted
-playsinline
-preload="metadata">
-</video>
-`
-:
-`
-<div class="thumb-placeholder">
-🎬
-</div>
-`
+?'<video muted playsinline preload="metadata"></video>'
+:'<div class="thumb-placeholder">🎬</div>'
 )
 }
 
-<div class="play-icon">
-▶
-</div>
+<div class="play-icon">▶</div>
 
 <button
 class="delete-btn"
@@ -2508,40 +1685,19 @@ ${escapeHtml(v.name)}
 </div>
 
 <span class="v-cat">
-${escapeHtml(
-v.category||'未分类'
-)}
+${escapeHtml(v.category||'未分类')}
 </span>
 
 <div class="video-tags">
-${normalizeTags(v.tags)
-.map(t=>`
-<span class="video-tag">
+${normalizeTags(v.tags).map(t=>
+`<span class="video-tag">
 ${escapeHtml(t)}
-</span>
-`)
-.join('')}
+</span>`
+).join('')}
 </div>
 
 </div>
 `;
-
-const thumbBox=
-card.querySelector(
-'.video-thumb'
-);
-
-thumbBox.prepend(
-createSelectCheckbox(v)
-);
-
-thumbBox.appendChild(
-createEditButton(v)
-);
-
-thumbBox.appendChild(
-createVideoEditPanel(v)
-);
 
 const vid=
 card.querySelector(
@@ -2555,7 +1711,6 @@ vid.src=src;
 vid.addEventListener(
 'loadedmetadata',
 ()=>{
-
 try{
 
 vid.currentTime=
@@ -2565,38 +1720,34 @@ vid.duration||0
 );
 
 }catch{}
-
 }
 );
 
 }
+
+const select=
+createVideoSelect(v);
+
+if(checked){
+select.classList.add('checked');
+}
+
+card.querySelector(
+'.video-thumb'
+)?.appendChild(select);
+
+addVideoEditButton(card,v);
 
 const checkbox=
-card.querySelector(
-'.video-select input'
-);
+select.querySelector('input');
 
-checkbox?.addEventListener(
+checkbox.addEventListener(
 'change',
-e=>{
-
-e.stopPropagation();
-
-}
+()=>{
+select.classList.toggle(
+'checked',
+checkbox.checked
 );
-
-card
-.querySelector(
-'.delete-btn'
-)
-.addEventListener(
-'click',
-e=>{
-
-e.stopPropagation();
-
-deleteVideo(v.id);
-
 }
 );
 
@@ -2605,18 +1756,9 @@ card.addEventListener(
 e=>{
 
 if(
-e.target.closest(
-'.delete-btn'
-)||
-e.target.closest(
-'.video-select'
-)||
-e.target.closest(
-'.video-edit-btn'
-)||
-e.target.closest(
-'.video-edit-panel'
-)
+e.target.closest('.delete-btn')||
+e.target.closest('.video-select')||
+e.target.closest('.video-edit-btn')
 ){
 return;
 }
@@ -2626,24 +1768,27 @@ playVideo(v);
 }
 );
 
-grid.appendChild(
-card
-);
-
+card.querySelector(
+'.delete-btn'
+).addEventListener(
+'click',
+e=>{
+e.stopPropagation();
+deleteVideo(v.id);
 }
 );
 
-box.appendChild(
-grid
-);
+grid.appendChild(card);
+
+});
+
+box.appendChild(grid);
 }
 
 function renderTimeline(vs,box){
 
 const timeline=
-document.createElement(
-'div'
-);
+document.createElement('div');
 
 timeline.className=
 'video-timeline';
@@ -2666,15 +1811,10 @@ const dateKey=
 `${date.getFullYear()}-${date.getMonth()+1}-${date.getDate()}`;
 
 const item=
-document.createElement(
-'div'
-);
+document.createElement('div');
 
 item.className=
 'timeline-item';
-
-item.dataset.videoId=
-v.id;
 
 const dateLabel=
 dateKey===lastDate
@@ -2683,11 +1823,9 @@ dateKey===lastDate
 
 lastDate=dateKey;
 
-const src=
-videoUrl(v);
+const src=videoUrl(v);
 
-const thumb=
-v.thumbnail||'';
+const thumb=v.thumbnail||'';
 
 item.innerHTML=`
 <div class="timeline-date">
@@ -2704,25 +1842,13 @@ ${dateLabel}
 
 ${
 thumb
-?`
-<img
+?`<img
 src="${escapeHtml(thumb)}"
-alt="">
-`
+alt="">`
 :
 src
-?`
-<video
-muted
-playsinline
-preload="metadata">
-</video>
-`
-:`
-<div class="thumb-placeholder">
-🎬
-</div>
-`
+?'<video muted playsinline preload="metadata"></video>'
+:'<div class="thumb-placeholder">🎬</div>'
 }
 
 </div>
@@ -2734,55 +1860,23 @@ ${escapeHtml(v.name)}
 </div>
 
 <div class="timeline-meta">
-${escapeHtml(
-v.category||'未分类'
-)}
+${escapeHtml(v.category||'未分类')}
  · ${formatSize(v.size)}
  · ${formatFullDate(v.createdAt)}
 </div>
 
 <div class="video-tags">
-${normalizeTags(v.tags)
-.map(t=>`
-<span class="video-tag">
+${normalizeTags(v.tags).map(t=>
+`<span class="video-tag">
 ${escapeHtml(t)}
-</span>
-`)
-.join('')}
+</span>`
+).join('')}
 </div>
 
 </div>
 
 </div>
 `;
-
-const card=
-item.querySelector(
-'.timeline-card'
-);
-
-const thumbBox=
-item.querySelector(
-'.timeline-thumb'
-);
-
-const select=
-createSelectCheckbox(
-v,
-'timeline-select'
-);
-
-thumbBox.appendChild(
-select
-);
-
-card.appendChild(
-createEditButton(v)
-);
-
-card.appendChild(
-createVideoEditPanel(v)
-);
 
 const vid=
 item.querySelector(
@@ -2796,7 +1890,6 @@ vid.src=src;
 vid.addEventListener(
 'loadedmetadata',
 ()=>{
-
 try{
 
 vid.currentTime=
@@ -2806,66 +1899,55 @@ vid.duration||0
 );
 
 }catch{}
-
 }
 );
 
 }
 
-item
-.querySelector(
+const select=
+createVideoSelect(v);
+
+item.querySelector(
 '.timeline-thumb'
-)
-.addEventListener(
+)?.appendChild(select);
+
+addVideoEditButton(
+item.querySelector('.timeline-card'),
+v
+);
+
+item.querySelector(
+'.timeline-thumb'
+).addEventListener(
 'click',
 e=>{
-
-if(
-e.target.closest(
-'.timeline-select'
-)||
-e.target.closest(
-'.video-edit-btn'
-)
-)return;
-
+if(e.target.closest('.video-select'))return;
 playVideo(v);
-
 }
 );
 
-item
-.querySelector(
+item.querySelector(
 '.timeline-title'
-)
-.addEventListener(
+).addEventListener(
 'click',
 ()=>playVideo(v)
 );
 
-timeline.appendChild(
-item
-);
+timeline.appendChild(item);
 
 });
 
-box.appendChild(
-timeline
-);
+box.appendChild(timeline);
 }
 
 function renderTagView(vs,box){
 
 const wrapper=
-document.createElement(
-'div'
-);
+document.createElement('div');
 
-wrapper.className=
-'tag-view';
+wrapper.className='tag-view';
 
-const groups=
-new Map();
+const groups=new Map();
 
 vs.forEach(v=>{
 
@@ -2874,18 +1956,16 @@ normalizeTags(v.tags);
 
 if(!tags.length){
 
-if(!groups.has(
-'__untagged__'
-)){
+if(!groups.has('__untagged__')){
 groups.set(
 '__untagged__',
 []
 );
 }
 
-groups
-.get('__untagged__')
-.push(v);
+groups.get(
+'__untagged__'
+).push(v);
 
 }else{
 
@@ -2895,9 +1975,7 @@ if(!groups.has(tag)){
 groups.set(tag,[]);
 }
 
-groups
-.get(tag)
-.push(v);
+groups.get(tag).push(v);
 
 });
 
@@ -2906,33 +1984,27 @@ groups
 });
 
 const ordered=
-[...groups.keys()]
-.sort((a,b)=>{
+[...groups.keys()].sort(
+(a,b)=>{
 
-if(
-a==='__untagged__'
-)return 1;
+if(a==='__untagged__')return 1;
 
-if(
-b==='__untagged__'
-)return -1;
+if(b==='__untagged__')return -1;
 
 return a.localeCompare(
 b,
 'zh-CN'
 );
 
-});
+}
+);
 
 ordered.forEach(tag=>{
 
 const group=
-document.createElement(
-'div'
-);
+document.createElement('div');
 
-group.className=
-'tag-group';
+group.className='tag-group';
 
 const title=
 tag==='__untagged__'
@@ -2954,16 +2026,12 @@ ${groups.get(tag).length} 个
 `;
 
 const videos=
-document.createElement(
-'div'
-);
+document.createElement('div');
 
 videos.className=
 'tag-group-videos';
 
-groups
-.get(tag)
-.forEach(v=>{
+groups.get(tag).forEach(v=>{
 
 videos.appendChild(
 createMiniCard(v)
@@ -2971,79 +2039,41 @@ createMiniCard(v)
 
 });
 
-group.appendChild(
-videos
-);
+group.appendChild(videos);
 
-wrapper.appendChild(
-group
-);
+wrapper.appendChild(group);
 
 });
 
-box.appendChild(
-wrapper
-);
+box.appendChild(wrapper);
 }
 
 function createMiniCard(v){
 
 const card=
-document.createElement(
-'div'
-);
+document.createElement('div');
 
-card.className=
-'video-card';
+card.className='video-card';
 
-card.dataset.videoId=
-v.id;
+const src=videoUrl(v);
 
-if(
-state.selectedIds.has(
-v.id
-)
-){
-card.classList.add(
-'selected'
-);
-}
-
-const src=
-videoUrl(v);
-
-const thumb=
-v.thumbnail||'';
+const thumb=v.thumbnail||'';
 
 card.innerHTML=`
 <div class="video-thumb">
 
 ${
 thumb
-?`
-<img
+?`<img
 src="${escapeHtml(thumb)}"
-alt="">
-`
+alt="">`
 :
 src
-?`
-<video
-muted
-playsinline
-preload="metadata">
-</video>
-`
-:`
-<div class="thumb-placeholder">
-🎬
-</div>
-`
+?'<video muted playsinline preload="metadata"></video>'
+:'<div class="thumb-placeholder">🎬</div>'
 }
 
-<div class="play-icon">
-▶
-</div>
+<div class="play-icon">▶</div>
 
 </div>
 
@@ -3056,50 +2086,36 @@ ${escapeHtml(v.name)}
 </div>
 
 <div class="v-meta">
-<span>${formatSize(v.size)}</span>
-<span>${formatDate(v.createdAt)}</span>
+
+<span>
+${formatSize(v.size)}
+</span>
+
+<span>
+${formatDate(v.createdAt)}
+</span>
+
 </div>
 
 <span class="v-cat">
-${escapeHtml(
-v.category||'未分类'
-)}
+${escapeHtml(v.category||'未分类')}
 </span>
 
 <div class="video-tags">
-${normalizeTags(v.tags)
-.map(t=>`
-<span class="video-tag">
+
+${normalizeTags(v.tags).map(t=>
+`<span class="video-tag">
 ${escapeHtml(t)}
-</span>
-`)
-.join('')}
+</span>`
+).join('')}
+
 </div>
 
 </div>
 `;
 
-const thumbBox=
-card.querySelector(
-'.video-thumb'
-);
-
-thumbBox.prepend(
-createSelectCheckbox(v)
-);
-
-thumbBox.appendChild(
-createEditButton(v)
-);
-
-thumbBox.appendChild(
-createVideoEditPanel(v)
-);
-
 const vid=
-card.querySelector(
-'video'
-);
+card.querySelector('video');
 
 if(vid&&src){
 
@@ -3108,7 +2124,6 @@ vid.src=src;
 vid.addEventListener(
 'loadedmetadata',
 ()=>{
-
 try{
 
 vid.currentTime=
@@ -3118,29 +2133,20 @@ vid.duration||0
 );
 
 }catch{}
-
 }
 );
 
 }
+
+addVideoEditButton(card,v);
 
 card.addEventListener(
 'click',
 e=>{
 
 if(
-e.target.closest(
-'.video-select'
-)||
-e.target.closest(
-'.video-edit-btn'
-)||
-e.target.closest(
-'.video-edit-panel'
-)
-){
-return;
-}
+e.target.closest('.video-edit-btn')
+)return;
 
 playVideo(v);
 
@@ -3152,16 +2158,13 @@ return card;
 
 function playVideo(v){
 
-const src=
-videoUrl(v);
+const src=videoUrl(v);
 
 if(!src){
-
 return toast(
 '视频文件数据不存在',
 'error'
 );
-
 }
 
 const video=
@@ -3169,578 +2172,52 @@ document.getElementById(
 'playerVideo'
 );
 
-state.currentPlayerId=
-v.id;
+state.currentPlayerId=v.id;
 
 video.onerror=()=>{
-
 toast(
 '这个 MP4 无法由当前浏览器解码。文件本身未被修改。',
 'error'
 );
-
 };
 
 video.src=src;
+
 video.load();
 
 document.getElementById(
 'playerTitle'
-).textContent=
-v.name;
+).textContent=v.name;
 
 document.getElementById(
 'playerMeta'
 ).textContent=
-`${v.category||'未分类'} · ${
-formatSize(v.size)
-} · ${
-new Date(
-v.createdAt
-).toLocaleString()
-}`;
+`${v.category||'未分类'} · ${formatSize(v.size)} · ${new Date(v.createdAt).toLocaleString()}`;
 
-openModal(
-'playerModal'
-);
+openModal('playerModal');
 
-video
-.play()
-.catch(()=>{});
-
+video.play().catch(()=>{});
 }
 
-async function deleteVideo(id){
+function downloadVideo(v){
 
-if(
-!confirm(
-'确定删除这个视频？'
-)
-)return;
-
-const old=
-state.data.videos;
-
-state.data.videos=
-old.filter(
-v=>v.id!==id
-);
-
-try{
-
-await IDB.deleteVideo(id);
-
-revoke(id);
-
-state.selectedIds.delete(id);
-
-renderCats();
-renderFilterBar();
-renderVideos();
-updateBatchBar();
-
-toast(
-'视频已删除'
-);
-
-}catch(e){
-
-state.data.videos=
-old;
-
-toast(
-'删除失败：'+e.message,
-'error'
-);
-
-}
-
-}
-
-async function deleteSelectedVideos(){
-
-const ids=[
-...state.selectedIds
-];
-
-if(!ids.length){
-
-return toast(
-'请先选择视频',
-'error'
-);
-
-}
-
-const count=ids.length;
-
-if(
-!confirm(
-`确定删除选中的 ${count} 个视频？`
-)
-){
-return;
-}
-
-const oldVideos=
-state.data.videos;
-
-state.data.videos=
-oldVideos.filter(
-v=>!state.selectedIds.has(v.id)
-);
-
-try{
-
-await IDB.deleteVideos(
-ids
-);
-
-ids.forEach(
-id=>revoke(id)
-);
-
-state.selectedIds.clear();
-
-renderCats();
-renderFilterBar();
-renderVideos();
-updateBatchBar();
-
-toast(
-`已删除 ${count} 个视频`
-);
-
-}catch(e){
-
-state.data.videos=
-oldVideos;
-
-toast(
-'批量删除失败：'+
-e.message,
-'error'
-);
-
-}
-
-}
-
-function selectAllCurrent(){
-
-const videos=
-getCurrentVideos();
-
-if(!videos.length){
-return;
-}
-
-const allSelected=
-videos.every(
-v=>
-state.selectedIds.has(
-v.id
-)
-);
-
-if(allSelected){
-
-videos.forEach(
-v=>
-state.selectedIds.delete(
-v.id
-)
-);
-
-}else{
-
-videos.forEach(
-v=>
-state.selectedIds.add(
-v.id
-)
-);
-
-}
-
-renderVideos();
-updateBatchBar();
-}
-
-function clearSelection(){
-
-state.selectedIds.clear();
-
-renderVideos();
-updateBatchBar();
-}
-
-function createBatchModal(){
-
-if(
-document.getElementById(
-'batchEditModal'
-)
-){
-return;
-}
-
-const modal=
-document.createElement(
-'div'
-);
-
-modal.id=
-'batchEditModal';
-
-modal.className=
-'modal-overlay';
-
-modal.innerHTML=`
-<div class="modal">
-
-<div class="modal-header">
-
-<h3 id="batchEditTitle">
-批量编辑
-</h3>
-
-<button
-class="modal-close"
-data-batch-close>
-×
-</button>
-
-</div>
-
-<div class="modal-body">
-
-<div class="batch-edit-group">
-
-<label class="batch-edit-label">
-分类
-</label>
-
-<select
-id="batchCategory">
-<option value="">
-不修改分类
-</option>
-
-${state.cats
-.filter(c=>c!=='全部')
-.map(c=>`
-<option value="${escapeHtml(c)}">
-${escapeHtml(c)}
-</option>
-`)
-.join('')}
-
-</select>
-
-</div>
-
-<div class="batch-edit-group">
-
-<label class="batch-edit-label">
-添加标签
-</label>
-
-<input
-id="batchAddTag"
-maxlength="20"
-placeholder="例如：重点">
-
-<div class="batch-edit-help">
-填写后会给所有选中视频添加这个标签。
-</div>
-
-</div>
-
-<div class="batch-edit-group">
-
-<label class="batch-edit-label">
-删除标签
-</label>
-
-<input
-id="batchRemoveTag"
-maxlength="20"
-placeholder="例如：待整理">
-
-<div class="batch-edit-help">
-填写后会从所有选中视频中删除这个标签。
-</div>
-
-</div>
-
-</div>
-
-<div class="modal-footer">
-
-<button
-class="btn btn-secondary"
-data-batch-close>
-取消
-</button>
-
-<button
-class="btn btn-primary"
-id="batchEditConfirm">
-保存修改
-</button>
-
-</div>
-
-</div>
-`;
-
-document.body.appendChild(
-modal
-);
-
-modal
-.querySelectorAll(
-'[data-batch-close]'
-)
-.forEach(btn=>{
-
-btn.addEventListener(
-'click',
-()=>{
-
-modal.classList.remove(
-'active'
-);
-
-}
-);
-
-});
-
-modal.addEventListener(
-'click',
-e=>{
-
-if(e.target===modal){
-modal.classList.remove(
-'active'
-);
-}
-
-});
-
-modal
-.querySelector(
-'#batchEditConfirm'
-)
-.addEventListener(
-'click',
-applyBatchEdit
-);
-
-}
-
-function openBatchEdit(){
-
-if(!state.selectedIds.size){
-
-return toast(
-'请先选择视频',
-'error'
-);
-
-}
-
-createBatchModal();
-
-const modal=
-document.getElementById(
-'batchEditModal'
-);
-
-const select=
-document.getElementById(
-'batchCategory'
-);
-
-select.innerHTML=`
-<option value="">
-不修改分类
-</option>
-
-${state.cats
-.filter(c=>c!=='全部')
-.map(c=>`
-<option value="${escapeHtml(c)}">
-${escapeHtml(c)}
-</option>
-`)
-.join('')}
-`;
-
-document.getElementById(
-'batchAddTag'
-).value='';
-
-document.getElementById(
-'batchRemoveTag'
-).value='';
-
-document.getElementById(
-'batchEditTitle'
-).textContent=
-`批量编辑（已选 ${state.selectedIds.size} 个）`;
-
-modal.classList.add(
-'active'
-);
-}
-
-async function applyBatchEdit(){
-
-const category=
-document.getElementById(
-'batchCategory'
-).value;
-
-const addTag=
-document.getElementById(
-'batchAddTag'
-).value.trim();
-
-const removeTag=
-document.getElementById(
-'batchRemoveTag'
-).value.trim();
-
-if(
-!category&&
-!addTag&&
-!removeTag
-){
-
-return toast(
-'没有需要修改的内容',
-'error'
-);
-
-}
-
-const ids=[
-...state.selectedIds
-];
-
-const oldVideos=
-state.data.videos.map(
-v=>({
-...v,
-tags:normalizeTags(
-v.tags
-)
-})
-);
-
-const changed=[];
-
-state.data.videos.forEach(v=>{
-
-if(!ids.includes(v.id)){
-return;
-}
-
-if(category){
-v.category=category;
-}
-
-let tags=
-normalizeTags(v.tags);
-
-if(addTag&&!tags.includes(addTag)){
-tags.push(addTag);
-}
-
-if(removeTag){
-
-tags=
-tags.filter(
-t=>t!==removeTag
-);
-
-}
-
-v.tags=
-normalizeTags(tags);
-
-changed.push(v);
-
-});
-
-try{
-
-for(const video of changed){
-
-await IDB.putVideo(
-video
-);
-
-}
-
-document
-.getElementById(
-'batchEditModal'
-)
-.classList.remove(
-'active'
-);
-
-renderCats();
-renderFilterBar();
-renderVideos();
-updateBatchBar();
-
-toast(
-`已修改 ${changed.length} 个视频`
-);
-
-}catch(e){
-
-state.data.videos=
-oldVideos;
-
-toast(
-'批量修改失败：'+
-e.message,
-'error'
-);
-
-}
-
-}
-
-async function downloadVideo(v){
-
-const b=
-asBlob(v);
+const b=asBlob(v);
 
 if(!b){
-
 return toast(
 '找不到原视频文件',
 'error'
 );
-
 }
 
 const u=
 URL.createObjectURL(b);
 
 const a=
-document.createElement(
-'a'
-);
+document.createElement('a');
 
 a.href=u;
+
 a.download=
 v.name||'video.mp4';
 
@@ -3756,22 +2233,18 @@ URL.revokeObjectURL(u);
 },
 1500
 );
-
 }
 
 async function downloadSelectedVideos(){
 
-const ids=[
-...state.selectedIds
-];
+const ids=
+[...state.selectedIds];
 
 if(!ids.length){
-
 return toast(
 '请先选择视频',
 'error'
 );
-
 }
 
 const videos=
@@ -3781,9 +2254,7 @@ v=>ids.includes(v.id)
 
 if(videos.length===1){
 
-downloadVideo(
-videos[0]
-);
+downloadVideo(videos[0]);
 
 return;
 }
@@ -3792,8 +2263,7 @@ let success=0;
 
 for(const v of videos){
 
-const b=
-asBlob(v);
+const b=asBlob(v);
 
 if(!b)continue;
 
@@ -3801,24 +2271,23 @@ const u=
 URL.createObjectURL(b);
 
 const a=
-document.createElement(
-'a'
-);
+document.createElement('a');
 
 a.href=u;
+
 a.download=
 v.name||'video.mp4';
 
 document.body.appendChild(a);
 
 a.click();
+
 a.remove();
 
 success++;
 
 await new Promise(
-resolve=>
-setTimeout(
+resolve=>setTimeout(
 resolve,
 180
 )
@@ -3840,7 +2309,593 @@ toast(
 state.selectedIds.clear();
 
 renderVideos();
+
 updateBatchBar();
+}
+
+async function deleteVideo(id){
+
+if(!confirm(
+'确定删除这个视频？'
+))return;
+
+const old=
+state.data.videos;
+
+state.data.videos=
+old.filter(
+v=>v.id!==id
+);
+
+if(await saveVideos()){
+
+revoke(id);
+
+state.selectedIds.delete(id);
+
+renderCats();
+
+renderFilterBar();
+
+renderVideos();
+
+updateBatchBar();
+
+toast('视频已删除');
+
+}else{
+
+state.data.videos=old;
+
+}
+}
+
+async function deleteSelectedVideos(){
+
+const ids=
+[...state.selectedIds];
+
+if(!ids.length){
+
+return toast(
+'请先选择视频',
+'error'
+);
+
+}
+
+const count=ids.length;
+
+if(!confirm(
+`确定删除选中的 ${count} 个视频？`
+)){
+return;
+}
+
+const oldVideos=
+state.data.videos;
+
+state.data.videos=
+oldVideos.filter(
+v=>!state.selectedIds.has(v.id)
+);
+
+if(await saveVideos()){
+
+ids.forEach(
+id=>revoke(id)
+);
+
+state.selectedIds.clear();
+
+renderCats();
+
+renderFilterBar();
+
+renderVideos();
+
+updateBatchBar();
+
+toast(
+`已删除 ${count} 个视频`
+);
+
+}else{
+
+state.data.videos=oldVideos;
+
+}
+}
+
+function selectAllCurrent(){
+
+const videos=
+getCurrentVideos();
+
+if(!videos.length)return;
+
+const allSelected=
+videos.every(
+v=>state.selectedIds.has(v.id)
+);
+
+if(allSelected){
+
+videos.forEach(
+v=>state.selectedIds.delete(v.id)
+);
+
+}else{
+
+videos.forEach(
+v=>state.selectedIds.add(v.id)
+);
+
+}
+
+renderVideos();
+
+updateBatchBar();
+}
+
+function clearSelection(){
+
+state.selectedIds.clear();
+
+renderVideos();
+
+updateBatchBar();
+}
+
+function createBatchEditModal(){
+
+const existing=
+document.getElementById(
+'batchEditModal'
+);
+
+if(existing){
+existing.remove();
+}
+
+const modal=
+document.createElement('div');
+
+modal.className=
+'modal-overlay';
+
+modal.id='batchEditModal';
+
+const box=
+document.createElement('div');
+
+box.className=
+'modal modal-sm';
+
+const categories=
+state.cats
+.filter(c=>c!=='全部')
+.map(c=>
+`<option value="${escapeHtml(c)}">
+${escapeHtml(c)}
+</option>`
+)
+.join('');
+
+box.innerHTML=`
+<div class="modal-header">
+
+<h3>
+✏️ 批量编辑
+</h3>
+
+<button
+class="modal-close"
+type="button"
+id="batchEditClose">
+×
+</button>
+
+</div>
+
+<div class="modal-body">
+
+<div style="
+font-size:13px;
+color:#aaa;
+margin-bottom:14px;
+">
+已选择
+<strong
+id="batchEditCount"
+style="color:#fff">
+0
+</strong>
+个视频
+</div>
+
+<div class="form-group">
+
+<label>
+统一修改分类
+</label>
+
+<select id="batchEditCategory">
+<option value="">
+不修改分类
+</option>
+
+${categories}
+
+</select>
+
+</div>
+
+<div class="form-group">
+
+<label>
+标签操作
+</label>
+
+<select id="batchTagAction">
+
+<option value="none">
+不修改标签
+</option>
+
+<option value="add">
+加入标签
+</option>
+
+<option value="replace">
+替换为这些标签
+</option>
+
+<option value="remove">
+移除标签
+</option>
+
+<option value="clear">
+清空全部标签
+</option>
+
+</select>
+
+</div>
+
+<div class="form-group">
+
+<label>
+标签
+</label>
+
+<div class="tag-editor">
+
+<input
+id="batchTagInput"
+type="text"
+maxlength="20"
+placeholder="输入标签后添加"
+>
+
+<button
+type="button"
+id="batchTagAdd">
+添加
+</button>
+
+</div>
+
+<div
+class="batch-tag-list"
+id="batchTagList">
+</div>
+
+</div>
+
+</div>
+
+<div class="modal-footer">
+
+<button
+class="btn btn-secondary"
+type="button"
+id="batchEditCancel">
+取消
+</button>
+
+<button
+class="btn btn-primary"
+type="button"
+id="batchEditSave">
+应用修改
+</button>
+
+</div>
+`;
+
+modal.appendChild(box);
+
+document.body.appendChild(modal);
+
+const ids=
+[...state.selectedIds];
+
+const countEl=
+modal.querySelector(
+'#batchEditCount'
+);
+
+countEl.textContent=
+ids.length;
+
+let tags=[];
+
+const list=
+modal.querySelector(
+'#batchTagList'
+);
+
+function renderBatchTags(){
+
+list.innerHTML='';
+
+tags.forEach(tag=>{
+
+const chip=
+document.createElement('button');
+
+chip.type='button';
+
+chip.className=
+'batch-tag-chip active';
+
+chip.textContent=
+`#${tag} ×`;
+
+chip.addEventListener(
+'click',
+()=>{
+tags=
+tags.filter(
+x=>x!==tag
+);
+
+renderBatchTags();
+}
+);
+
+list.appendChild(chip);
+
+});
+
+}
+
+function addBatchTag(){
+
+const input=
+modal.querySelector(
+'#batchTagInput'
+);
+
+const tag=
+input.value.trim();
+
+if(!tag)return;
+
+if(!tags.includes(tag)){
+tags.push(tag);
+}
+
+input.value='';
+
+renderBatchTags();
+}
+
+modal.querySelector(
+'#batchTagAdd'
+).addEventListener(
+'click',
+addBatchTag
+);
+
+modal.querySelector(
+'#batchTagInput'
+).addEventListener(
+'keydown',
+e=>{
+
+if(e.key==='Enter'){
+
+e.preventDefault();
+
+addBatchTag();
+
+}
+
+}
+);
+
+const close=()=>{
+modal.remove();
+};
+
+modal.querySelector(
+'#batchEditClose'
+).addEventListener(
+'click',
+close
+);
+
+modal.querySelector(
+'#batchEditCancel'
+).addEventListener(
+'click',
+close
+);
+
+modal.addEventListener(
+'click',
+e=>{
+if(e.target===modal){
+close();
+}
+}
+);
+
+modal.querySelector(
+'#batchEditSave'
+).addEventListener(
+'click',
+async()=>{
+
+const saveBtn=
+modal.querySelector(
+'#batchEditSave'
+);
+
+const category=
+modal.querySelector(
+'#batchEditCategory'
+).value;
+
+const action=
+modal.querySelector(
+'#batchTagAction'
+).value;
+
+saveBtn.disabled=true;
+
+saveBtn.textContent=
+'保存中…';
+
+const selected=
+state.data.videos.filter(
+v=>ids.includes(v.id)
+);
+
+const snapshots=
+selected.map(v=>({
+id:v.id,
+category:v.category,
+tags:normalizeTags(v.tags)
+}));
+
+try{
+
+selected.forEach(v=>{
+
+if(category){
+v.category=category;
+}
+
+if(action==='add'){
+
+v.tags=
+normalizeTags([
+...normalizeTags(v.tags),
+...tags
+]);
+
+}else if(action==='replace'){
+
+v.tags=
+normalizeTags(tags);
+
+}else if(action==='remove'){
+
+v.tags=
+normalizeTags(v.tags)
+.filter(
+t=>!tags.includes(t)
+);
+
+}else if(action==='clear'){
+
+v.tags=[];
+
+}
+
+});
+
+if(!(await saveVideos())){
+
+snapshots.forEach(s=>{
+
+const v=
+state.data.videos.find(
+x=>x.id===s.id
+);
+
+if(v){
+
+v.category=s.category;
+v.tags=s.tags;
+
+}
+
+});
+
+saveBtn.disabled=false;
+
+saveBtn.textContent=
+'应用修改';
+
+return;
+}
+
+renderCats();
+
+renderFilterBar();
+
+renderVideos();
+
+updateBatchBar();
+
+close();
+
+toast(
+`已修改 ${selected.length} 个视频`
+);
+
+}catch(e){
+
+console.error(e);
+
+snapshots.forEach(s=>{
+
+const v=
+state.data.videos.find(
+x=>x.id===s.id
+);
+
+if(v){
+
+v.category=s.category;
+v.tags=s.tags;
+
+}
+
+});
+
+saveBtn.disabled=false;
+
+saveBtn.textContent=
+'应用修改';
+
+toast(
+'批量修改失败：'+e.message,
+'error'
+);
+
+}
+
+}
+);
+
+renderBatchTags();
+
+openModal('batchEditModal');
 }
 
 function updateBatchBar(){
@@ -3850,130 +2905,95 @@ document.getElementById(
 'batchActionBar'
 );
 
-if(!bar){
-
-bar=
-document.createElement(
-'div'
-);
-
-bar.id=
-'batchActionBar';
-
-bar.innerHTML=`
-
-<span id="batchCount"></span>
-
-<button
-id="batchSelectAll"
-class="btn btn-secondary"
-style="
-padding:7px 10px;
-font-size:12px;
-">
-全选
-</button>
-
-<button
-id="batchEdit"
-class="btn btn-secondary"
-style="
-padding:7px 10px;
-font-size:12px;
-">
-编辑
-</button>
-
-<button
-id="batchDownload"
-class="btn btn-primary"
-style="
-padding:7px 10px;
-font-size:12px;
-">
-⬇ 下载
-</button>
-
-<button
-id="batchDelete"
-class="btn btn-secondary"
-style="
-padding:7px 10px;
-font-size:12px;
-color:#ff6b6b;
-">
-删除
-</button>
-
-<button>
-
-<button
-id="batchClear"
-class="btn btn-secondary"
-style="
-padding:7px 10px;
-font-size:12px;
-">
-取消
-</button>
-`;
-
-document.body.appendChild(
-bar
-);
-
-document
-.getElementById(
-'batchSelectAll'
-)
-.addEventListener(
-'click',
-selectAllCurrent
-);
-
-document
-.getElementById(
-'batchEdit'
-)
-.addEventListener(
-'click',
-openBatchEdit
-);
-
-document
-.getElementById(
-'batchDownload'
-)
-.addEventListener(
-'click',
-downloadSelectedVideos
-);
-
-document
-.getElementById(
-'batchDelete'
-)
-.addEventListener(
-'click',
-deleteSelectedVideos
-);
-
-document
-.getElementById(
-'batchClear'
-)
-.addEventListener(
-'click',
-clearSelection
-);
-
-}
-
 const selectedCount=
 state.selectedIds.size;
 
 const currentVideos=
 getCurrentVideos();
+
+if(!bar){
+
+bar=
+document.createElement('div');
+
+bar.id='batchActionBar';
+
+bar.innerHTML=`
+
+<span
+id="batchCount">
+</span>
+
+<button
+id="batchSelectAll"
+class="btn btn-secondary batch-edit-btn">
+全选
+</button>
+
+<button
+id="batchEdit"
+class="btn btn-secondary batch-edit-btn">
+✏️ 编辑
+</button>
+
+<button
+id="batchDownload"
+class="btn btn-primary batch-edit-btn">
+⬇ 下载
+</button>
+
+<button
+id="batchDelete"
+class="btn btn-secondary batch-edit-btn"
+style="color:#ff6b6b">
+删除
+</button>
+
+<button
+id="batchClear"
+class="btn btn-secondary batch-edit-btn">
+取消
+</button>
+`;
+
+document.body.appendChild(bar);
+
+document.getElementById(
+'batchSelectAll'
+).addEventListener(
+'click',
+selectAllCurrent
+);
+
+document.getElementById(
+'batchEdit'
+).addEventListener(
+'click',
+createBatchEditModal
+);
+
+document.getElementById(
+'batchDownload'
+).addEventListener(
+'click',
+downloadSelectedVideos
+);
+
+document.getElementById(
+'batchDelete'
+).addEventListener(
+'click',
+deleteSelectedVideos
+);
+
+document.getElementById(
+'batchClear'
+).addEventListener(
+'click',
+clearSelection
+);
+
+}
 
 if(!selectedCount){
 
@@ -3984,782 +3004,1943 @@ return;
 
 bar.style.display='flex';
 
-document
-.getElementById(
+document.getElementById(
 'batchCount'
-)
-.textContent=
+).textContent=
 `已选 ${selectedCount} 个`;
 
 const allSelected=
 currentVideos.length>0&&
 currentVideos.every(
-v=>
-state.selectedIds.has(
-v.id
-)
+v=>state.selectedIds.has(v.id)
 );
 
-document
-.getElementById(
+document.getElementById(
 'batchSelectAll'
-)
-.textContent=
+).textContent=
 allSelected
 ?'取消全选'
 :'全选';
 }
 
-function createVideoManagePanel(){
-const old=document.getElementById('videoManagePanel');
-if(old)old.remove();
+function isDuplicateVideo(file){
 
-const panel=document.createElement('div');
-panel.id='videoManagePanel';
-panel.className='video-manage-panel';
-panel.innerHTML=`
-<div class="video-manage-head">
-<div>
-<strong>批量管理</strong>
-<span id="manageSelectedCount">已选 0 个</span>
-</div>
-<button type="button" id="manageCloseBtn">×</button>
-</div>
+if(!file)return false;
 
-<div class="video-manage-section">
-<div class="video-manage-label">修改分类</div>
-<select id="batchCategorySelect">
-<option value="">选择分类</option>
-</select>
-<button type="button" id="batchCategoryApply" class="btn btn-secondary">
-应用分类
-</button>
-</div>
+return state.data.videos.some(v=>{
 
-<div class="video-manage-section">
-<div class="video-manage-label">标签</div>
-<div class="batch-tag-row">
-<input
-type="text"
-id="batchTagInput"
-maxlength="20"
-placeholder="输入标签后添加"
->
-<button type="button" id="batchTagAddBtn" class="btn btn-secondary">
-添加
-</button>
-</div>
-<div id="batchTagList" class="batch-tag-list"></div>
-</div>
+const sameName=
+String(v.name||'')
+.trim()
+.toLowerCase()===
+String(file.name||'')
+.trim()
+.toLowerCase();
 
-<div class="video-manage-actions">
-<button type="button" id="batchDeleteManageBtn" class="btn btn-secondary danger">
-删除选中
-</button>
-<button type="button" id="batchClearManageBtn" class="btn btn-secondary">
-取消选择
-</button>
-</div>
-`;
-document.body.appendChild(panel);
+const sameSize=
+Number(v.size||0)===
+Number(file.size||0);
 
-const categorySelect=
-document.getElementById('batchCategorySelect');
+return sameName&&sameSize;
 
-if(categorySelect){
-categorySelect.innerHTML=`
-<option value="">选择分类</option>
-${
-state.cats
-.filter(c=>c!=='全部')
-.map(c=>
-`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`
+});
+}
+
+function getSkipDuplicateSetting(){
+
+const checkbox=
+document.getElementById(
+'skipUploadedVideos'
+);
+
+return checkbox
+?checkbox.checked
+:true;
+}
+
+function injectDuplicateOption(){
+
+if(
+document.getElementById(
+'skipUploadedVideos'
 )
-.join('')
-}
-`;
-}
+)return;
 
-document.getElementById('manageCloseBtn')
-?.addEventListener('click',()=>{
-panel.classList.remove('show');
-});
+const fileDrop=
+document.getElementById(
+'fileDrop'
+);
 
-document.getElementById('batchCategoryApply')
-?.addEventListener('click',applyBatchCategory);
+if(!fileDrop)return;
 
-document.getElementById('batchTagAddBtn')
-?.addEventListener('click',addBatchTag);
+const wrap=
+document.createElement('label');
 
-document.getElementById('batchTagInput')
-?.addEventListener('keydown',e=>{
-if(e.key==='Enter'){
-e.preventDefault();
-addBatchTag();
-}
-});
+wrap.id='duplicateOption';
 
-document.getElementById('batchDeleteManageBtn')
-?.addEventListener('click',deleteSelectedVideos);
-
-document.getElementById('batchClearManageBtn')
-?.addEventListener('click',clearSelection);
-
-renderBatchTagList();
-updateVideoManagePanel();
-}
-
-function injectVideoManageStyle(){
-if(document.getElementById('videoManageStyle'))return;
-
-const style=document.createElement('style');
-style.id='videoManageStyle';
-
-style.textContent=`
-.video-manage-panel{
-position:fixed;
-right:18px;
-bottom:86px;
-z-index:95;
-width:min(360px,calc(100vw - 28px));
-padding:15px;
-background:#202020;
-border:1px solid #444;
-border-radius:14px;
-box-shadow:0 14px 45px rgba(0,0,0,.55);
-display:none;
-color:#eee;
-}
-
-.video-manage-panel.show{
-display:block;
-}
-
-.video-manage-head{
+wrap.style.cssText=`
 display:flex;
 align-items:center;
-justify-content:space-between;
-margin-bottom:14px;
-}
-
-.video-manage-head strong{
-font-size:14px;
-}
-
-.video-manage-head span{
-margin-left:8px;
-font-size:11px;
-color:#888;
-}
-
-.video-manage-head button{
-border:0;
-background:transparent;
-color:#aaa;
-font-size:22px;
-cursor:pointer;
-line-height:1;
-}
-
-.video-manage-section{
-padding:12px 0;
-border-top:1px solid rgba(255,255,255,.07);
-}
-
-.video-manage-label{
-font-size:12px;
-color:#aaa;
-margin-bottom:8px;
-}
-
-.video-manage-section select,
-.batch-tag-row input{
-box-sizing:border-box;
-width:100%;
-background:#151515;
-border:1px solid #383838;
-border-radius:8px;
-padding:8px 10px;
-color:#eee;
-outline:none;
-}
-
-.video-manage-section select{
-margin-bottom:7px;
-}
-
-.batch-tag-row{
-display:flex;
-gap:7px;
-}
-
-.batch-tag-row input{
-min-width:0;
-flex:1;
-}
-
-.batch-tag-list{
-display:flex;
-flex-wrap:wrap;
-gap:6px;
-margin-top:8px;
-}
-
-.batch-tag-chip{
-display:inline-flex;
-align-items:center;
-gap:4px;
-border:1px solid rgba(255,255,255,.1);
-background:rgba(255,255,255,.06);
-color:#ccc;
-border-radius:999px;
-padding:5px 8px;
-font-size:11px;
-}
-
-.batch-tag-chip button{
-border:0;
-background:transparent;
-color:#aaa;
-padding:0;
+gap:8px;
+margin-top:12px;
+padding:10px 12px;
+border-radius:10px;
+background:rgba(255,255,255,.04);
+border:1px solid rgba(255,255,255,.08);
 cursor:pointer;
 font-size:13px;
-line-height:1;
-}
-
-.video-manage-actions{
-display:flex;
-gap:7px;
-padding-top:12px;
-border-top:1px solid rgba(255,255,255,.07);
-}
-
-.video-manage-actions button{
-flex:1;
-}
-
-.video-manage-actions .danger{
-color:#ff7777;
-}
-
-.batch-tag-row button,
-.video-manage-section > button{
-flex:none;
-white-space:nowrap;
-}
-
-@media(max-width:560px){
-.video-manage-panel{
-right:10px;
-bottom:72px;
-width:calc(100vw - 20px);
-}
-}
+line-height:1.4;
+color:#d8d8d8;
 `;
 
-document.head.appendChild(style);
+wrap.innerHTML=`
+
+<input
+id="skipUploadedVideos"
+type="checkbox"
+checked
+style="
+width:17px;
+height:17px;
+margin:0;
+cursor:pointer;
+flex:none;
+">
+
+<span>
+
+已上传的视频不显示
+
+<small
+style="
+display:block;
+margin-top:2px;
+font-size:11px;
+opacity:.6;
+">
+
+按「文件名 + 文件大小」
+判断重复视频
+
+</small>
+
+</span>
+`;
+
+fileDrop.insertAdjacentElement(
+'afterend',
+wrap
+);
+
+const checkbox=
+document.getElementById(
+'skipUploadedVideos'
+);
+
+checkbox?.addEventListener(
+'change',
+()=>{
+
+if(state.selectedFiles.length){
+refreshSelectedFilesDisplay();
 }
 
-function updateVideoManagePanel(){
-const panel=document.getElementById('videoManagePanel');
-if(!panel)return;
-
-const count=state.selectedIds.size;
-
-const countEl=
-document.getElementById('manageSelectedCount');
-
-if(countEl){
-countEl.textContent=`已选 ${count} 个`;
+}
+);
 }
 
-if(!count){
-panel.classList.remove('show');
+function refreshSelectedFilesDisplay(){
+
+const files=
+[...state.selectedFiles];
+
+const nameEl=
+document.getElementById(
+'fileName'
+);
+
+const btn=
+document.getElementById(
+'uploadConfirmBtn'
+);
+
+if(!nameEl||!btn)return;
+
+if(!files.length){
+
+nameEl.textContent='';
+
+btn.disabled=true;
+
+btn.textContent='上传';
+
 return;
 }
 
-panel.classList.add('show');
+const totalSize=
+files.reduce(
+(sum,f)=>sum+f.size,
+0
+);
+
+if(files.length===1){
+
+nameEl.textContent=
+`${files[0].name} · ${formatSize(files[0].size)}`;
+
+}else{
+
+nameEl.textContent=
+`已选择 ${files.length} 个视频 · 总计 ${formatSize(totalSize)}`;
+
+}
+
+btn.disabled=false;
+
+btn.textContent=
+files.length>1
+?`上传 ${files.length} 个视频`
+:'上传';
+}
+
+function createUploadTagEditor(){
+
+if(
+document.getElementById(
+'uploadTags'
+)
+)return;
 
 const select=
-document.getElementById('batchCategorySelect');
-
-if(select){
-select.innerHTML=`
-<option value="">选择分类</option>
-${
-state.cats
-.filter(c=>c!=='全部')
-.map(c=>
-`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`
-)
-.join('')
-}
-`;
-
-select.value='';
-}
-
-renderBatchTagList();
-}
-
-function renderBatchTagList(){
-const box=document.getElementById('batchTagList');
-if(!box)return;
-
-box.innerHTML='';
-
-const tags=new Set();
-
-state.data.videos
-.filter(v=>state.selectedIds.has(v.id))
-.forEach(v=>{
-normalizeTags(v.tags).forEach(tag=>tags.add(tag));
-});
-
-[...tags]
-.sort((a,b)=>a.localeCompare(b,'zh-CN'))
-.forEach(tag=>{
-const chip=document.createElement('span');
-chip.className='batch-tag-chip';
-
-const text=document.createElement('span');
-text.textContent='#'+tag;
-
-const btn=document.createElement('button');
-btn.type='button';
-btn.textContent='×';
-btn.title='从选中视频中移除此标签';
-
-btn.addEventListener('click',()=>{
-removeBatchTag(tag);
-});
-
-chip.appendChild(text);
-chip.appendChild(btn);
-box.appendChild(chip);
-});
-}
-
-function addBatchTag(){
-const input=document.getElementById('batchTagInput');
-if(!input)return;
-
-const tag=input.value.trim();
-
-if(!tag){
-return toast('请输入标签','error');
-}
-
-const ids=[...state.selectedIds];
-
-if(!ids.length){
-return toast('请先选择视频','error');
-}
-
-const oldVideos=state.data.videos.map(v=>({
-...v,
-tags:normalizeTags(v.tags)
-}));
-
-state.data.videos.forEach(v=>{
-if(state.selectedIds.has(v.id)){
-const tags=normalizeTags(v.tags);
-
-if(!tags.includes(tag)){
-tags.push(tag);
-}
-
-v.tags=tags;
-}
-});
-
-saveVideos().then(success=>{
-if(!success){
-state.data.videos=oldVideos;
-return;
-}
-
-input.value='';
-renderFilterBar();
-renderVideos();
-updateVideoManagePanel();
-toast(`已为 ${ids.length} 个视频添加标签 #${tag}`);
-});
-}
-
-function removeBatchTag(tag){
-const ids=[...state.selectedIds];
-
-if(!ids.length)return;
-
-const oldVideos=state.data.videos.map(v=>({
-...v,
-tags:normalizeTags(v.tags)
-}));
-
-state.data.videos.forEach(v=>{
-if(state.selectedIds.has(v.id)){
-v.tags=normalizeTags(v.tags)
-.filter(t=>t!==tag);
-}
-});
-
-saveVideos().then(success=>{
-if(!success){
-state.data.videos=oldVideos;
-return;
-}
-
-renderFilterBar();
-renderVideos();
-updateVideoManagePanel();
-toast(`已从选中视频移除标签 #${tag}`);
-});
-}
-
-async function applyBatchCategory(){
-const select=document.getElementById('batchCategorySelect');
+document.getElementById(
+'uploadCat'
+);
 
 if(!select)return;
 
-const category=select.value;
+const group=
+document.createElement('div');
 
-if(!category){
-return toast('请选择分类','error');
-}
+group.className='upload-tags';
 
-const ids=[...state.selectedIds];
+group.id='uploadTags';
 
-if(!ids.length){
-return toast('请先选择视频','error');
-}
+group.innerHTML=`
 
-if(!state.cats.includes(category)){
-return toast('分类不存在','error');
-}
+<label class="upload-tags-label">
+添加标签
+</label>
 
-const oldVideos=state.data.videos.map(v=>({
-...v,
-tags:normalizeTags(v.tags)
-}));
+<div class="upload-tag-input-row">
 
-state.data.videos.forEach(v=>{
-if(state.selectedIds.has(v.id)){
-v.category=category;
-}
-});
-
-if(!(await saveVideos())){
-state.data.videos=oldVideos;
-return;
-}
-
-renderCats();
-renderFilterBar();
-renderVideos();
-updateVideoManagePanel();
-
-toast(`已将 ${ids.length} 个视频移动到「${category}」`);
-}
-
-function createSingleVideoEditor(v){
-const modalId='videoEditModal';
-
-let modal=document.getElementById(modalId);
-
-if(!modal){
-modal=document.createElement('div');
-modal.id=modalId;
-modal.className='modal-overlay';
-
-modal.innerHTML=`
-<div class="modal">
-<div class="modal-header">
-<h3>编辑视频</h3>
-<button
-type="button"
-class="modal-close"
-data-close="videoEditModal">
-×
-</button>
-</div>
-
-<div class="modal-body">
-<div class="edit-video-name" id="editVideoName"></div>
-
-<div class="form-group">
-<label>分类</label>
-<select id="editVideoCategory"></select>
-</div>
-
-<div class="form-group">
-<label>标签</label>
-
-<div class="edit-tag-input-row">
 <input
 type="text"
-id="editVideoTagInput"
+id="uploadTagInput"
 maxlength="20"
-placeholder="输入标签"
->
+placeholder="例如：重点、灵感、待整理">
+
 <button
 type="button"
-id="editVideoTagAdd">
+id="uploadTagAddBtn">
 添加
 </button>
+
 </div>
 
 <div
-id="editVideoTagList"
-class="edit-video-tag-list">
-</div>
-</div>
-</div>
-
-<div class="modal-footer">
-<button
-type="button"
-class="btn btn-secondary"
-data-close="videoEditModal">
-取消
-</button>
-
-<button
-type="button"
-class="btn btn-primary"
-id="editVideoSaveBtn">
-保存修改
-</button>
-</div>
+class="upload-tag-list"
+id="uploadTagList">
 </div>
 `;
 
-document.body.appendChild(modal);
+select.closest(
+'.form-group'
+)?.insertAdjacentElement(
+'afterend',
+group
+);
 
-modal.addEventListener('click',e=>{
-if(e.target===modal){
-closeModal(modalId);
-}
-});
+document.getElementById(
+'uploadTagAddBtn'
+)?.addEventListener(
+'click',
+addUploadTag
+);
 
-modal.querySelectorAll('[data-close]').forEach(btn=>{
-btn.addEventListener('click',()=>{
-closeModal(btn.dataset.close);
-});
-});
+document.getElementById(
+'uploadTagInput'
+)?.addEventListener(
+'keydown',
+e=>{
 
-document.getElementById('editVideoTagAdd')
-?.addEventListener('click',()=>{
-addSingleEditTag();
-});
-
-document.getElementById('editVideoTagInput')
-?.addEventListener('keydown',e=>{
 if(e.key==='Enter'){
+
 e.preventDefault();
-addSingleEditTag();
-}
-});
 
-document.getElementById('editVideoSaveBtn')
-?.addEventListener('click',saveSingleVideoEdit);
+addUploadTag();
+
 }
 
-state.editingVideoId=v.id;
-state.editingTags=normalizeTags(v.tags);
-
-const nameEl=
-document.getElementById('editVideoName');
-
-if(nameEl){
-nameEl.textContent=v.name;
+}
+);
 }
 
-const select=
-document.getElementById('editVideoCategory');
+function addUploadTag(){
 
-if(select){
-select.innerHTML=
-state.cats
-.filter(c=>c!=='全部')
-.map(c=>
-`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`
-)
-.join('');
+const input=
+document.getElementById(
+'uploadTagInput'
+);
 
-select.value=
-state.cats.includes(v.category)
-?v.category
-:'未分类';
+if(!input)return;
+
+const tag=
+input.value.trim();
+
+if(!tag)return;
+
+if(!state.uploadTags){
+state.uploadTags=[];
 }
 
-renderSingleEditTags();
+if(
+state.uploadTags.includes(tag)
+){
 
-openModal(modalId);
+input.value='';
+
+return;
 }
 
-function renderSingleEditTags(){
-const box=document.getElementById('editVideoTagList');
+state.uploadTags.push(tag);
+
+input.value='';
+
+renderUploadTags();
+}
+
+function renderUploadTags(){
+
+const box=
+document.getElementById(
+'uploadTagList'
+);
+
 if(!box)return;
 
 box.innerHTML='';
 
-(state.editingTags||[]).forEach(tag=>{
-const chip=document.createElement('button');
+(state.uploadTags||[])
+.forEach(tag=>{
 
-chip.type='button';
-chip.className='edit-video-tag';
+const btn=
+document.createElement('button');
 
-chip.textContent=`#${tag} ×`;
+btn.type='button';
 
-chip.addEventListener('click',()=>{
-state.editingTags=
-(state.editingTags||[])
-.filter(t=>t!==tag);
+btn.className=
+'upload-tag-remove';
 
-renderSingleEditTags();
-});
+btn.textContent=
+`#${tag} ×`;
 
-box.appendChild(chip);
+btn.addEventListener(
+'click',
+()=>{
+
+state.uploadTags=
+state.uploadTags.filter(
+t=>t!==tag
+);
+
+renderUploadTags();
+
+}
+);
+
+box.appendChild(btn);
+
 });
 }
 
-function addSingleEditTag(){
-const input=document.getElementById('editVideoTagInput');
+function openUpload(){
 
-if(!input)return;
+const s=
+document.getElementById(
+'uploadCat'
+);
 
-const tag=input.value.trim();
+if(s){
 
-if(!tag)return;
+s.innerHTML=
+state.cats
+.filter(
+c=>c!=='全部'
+)
+.map(c=>`
 
-if(!state.editingTags){
-state.editingTags=[];
+<option
+value="${escapeHtml(c)}">
+${escapeHtml(c)}
+</option>
+
+`)
+.join('');
+
 }
 
-if(state.editingTags.includes(tag)){
-input.value='';
+state.selectedFiles=[];
+
+state.uploadTags=[];
+
+const fileInput=
+document.getElementById(
+'fileInput'
+);
+
+if(fileInput){
+
+fileInput.multiple=true;
+
+fileInput.setAttribute(
+'accept',
+'video/mp4,video/*'
+);
+
+}
+
+const nameEl=
+document.getElementById(
+'fileName'
+);
+
+if(nameEl){
+nameEl.textContent='';
+}
+
+const btn=
+document.getElementById(
+'uploadConfirmBtn'
+);
+
+if(btn){
+
+btn.disabled=true;
+
+btn.textContent='上传';
+
+}
+
+injectDuplicateOption();
+
+createUploadTagEditor();
+
+renderUploadTags();
+
+const duplicateCheckbox=
+document.getElementById(
+'skipUploadedVideos'
+);
+
+if(duplicateCheckbox){
+duplicateCheckbox.checked=true;
+}
+
+openModal('uploadModal');
+}
+
+function handleFiles(fileList){
+
+if(!fileList||!fileList.length)return;
+
+const files=[...fileList];
+
+const valid=[];
+
+let duplicateCount=0;
+
+const skipDuplicate=
+getSkipDuplicateSetting();
+
+for(const file of files){
+
+if(
+!file.type.startsWith('video/')&&
+!/\.mp4$/i.test(file.name)
+){
+
+toast(
+`${file.name} 不是有效的视频文件`,
+'error'
+);
+
+continue;
+}
+
+if(
+file.size>CONFIG.MAX_FILE_SIZE
+){
+
+toast(
+`${file.name} 超过 2GB，暂不建议导入`,
+'error'
+);
+
+continue;
+}
+
+if(
+skipDuplicate&&
+isDuplicateVideo(file)
+){
+
+duplicateCount++;
+
+continue;
+}
+
+valid.push(file);
+
+}
+
+if(duplicateCount>0){
+
+if(valid.length){
+
+toast(
+`已过滤 ${duplicateCount} 个已上传视频`,
+'error'
+);
+
+}else{
+
+toast(
+`选择的视频都已上传，共过滤 ${duplicateCount} 个`,
+'error'
+);
+
+}
+
+}
+
+if(!valid.length){
+
+state.selectedFiles=[];
+
+const nameEl=
+document.getElementById(
+'fileName'
+);
+
+const btn=
+document.getElementById(
+'uploadConfirmBtn'
+);
+
+if(nameEl){
+
+nameEl.textContent=
+duplicateCount
+?`已过滤 ${duplicateCount} 个重复视频`
+:'';
+
+}
+
+if(btn){
+
+btn.disabled=true;
+
+btn.textContent='上传';
+
+}
+
 return;
 }
 
-state.editingTags.push(tag);
-input.value='';
+state.selectedFiles=valid;
 
-renderSingleEditTags();
+refreshSelectedFilesDisplay();
 }
 
-async function saveSingleVideoEdit(){
-const id=state.editingVideoId;
+function handleFile(file){
 
-if(!id)return;
+if(!file)return;
 
-const v=state.data.videos.find(x=>x.id===id);
-
-if(!v){
-return toast('视频不存在','error');
+handleFiles([file]);
 }
 
-const select=
-document.getElementById('editVideoCategory');
+async function checkSpace(n){
 
-const category=
-select?.value||'未分类';
+try{
 
-const oldCategory=v.category;
-const oldTags=normalizeTags(v.tags);
+const e=
+await navigator.storage?.estimate?.();
 
-v.category=category;
-v.tags=normalizeTags(state.editingTags||[]);
+if(e?.quota){
 
-if(!(await saveVideos())){
-v.category=oldCategory;
-v.tags=oldTags;
+const available=
+e.quota-(e.usage||0);
+
+if(
+n+CONFIG.STORAGE_RESERVE>
+available
+){
+
+toast(
+`可用空间不足：约剩 ${formatSize(Math.max(0,available))}`,
+'error'
+);
+
+return false;
+}
+
+}
+
+}catch{}
+
+return true;
+}
+
+async function createThumbnail(file){
+
+return new Promise(resolve=>{
+
+const u=
+URL.createObjectURL(file);
+
+const v=
+document.createElement('video');
+
+v.muted=true;
+
+v.playsInline=true;
+
+v.preload='metadata';
+
+let done=false;
+
+const finish=x=>{
+
+if(done)return;
+
+done=true;
+
+URL.revokeObjectURL(u);
+
+resolve(x||'');
+
+};
+
+v.onloadeddata=()=>{
+
+try{
+
+v.currentTime=
+Math.min(
+.15,
+Math.max(
+0,
+(v.duration||.15)/10
+)
+);
+
+}catch{}
+
+};
+
+v.onseeked=()=>{
+
+try{
+
+const c=
+document.createElement('canvas');
+
+const w=
+Math.min(
+640,
+v.videoWidth||640
+);
+
+const h=
+Math.max(
+1,
+Math.round(
+w*
+(v.videoHeight||360)/
+(v.videoWidth||640)
+)
+);
+
+c.width=w;
+
+c.height=h;
+
+const ctx=
+c.getContext('2d');
+
+ctx.drawImage(
+v,
+0,
+0,
+w,
+h
+);
+
+finish(
+c.toDataURL(
+'image/jpeg',
+.72
+)
+);
+
+}catch{
+
+finish('');
+
+}
+
+};
+
+v.onerror=()=>finish('');
+
+v.src=u;
+
+setTimeout(
+()=>finish(''),
+5000
+);
+
+});
+}
+
+async function doUpload(){
+
+const files=
+[...state.selectedFiles];
+
+if(!files.length)return;
+
+const btn=
+document.getElementById(
+'uploadConfirmBtn'
+);
+
+btn.disabled=true;
+
+try{
+
+const skipDuplicate=
+getSkipDuplicateSetting();
+
+const uploadFiles=[];
+
+let duplicateCount=0;
+
+for(const file of files){
+
+if(
+skipDuplicate&&
+isDuplicateVideo(file)
+){
+
+duplicateCount++;
+
+continue;
+}
+
+uploadFiles.push(file);
+
+}
+
+if(!uploadFiles.length){
+
+state.selectedFiles=[];
+
+btn.textContent='上传';
+
+btn.disabled=true;
+
+toast(
+duplicateCount
+?`没有需要上传的视频，已跳过 ${duplicateCount} 个重复视频`
+:'没有需要上传的视频',
+'error'
+);
+
 return;
 }
+
+const totalSize=
+uploadFiles.reduce(
+(sum,f)=>sum+f.size,
+0
+);
+
+btn.textContent=
+'检查空间…';
+
+if(
+!(await checkSpace(totalSize))
+){
+
+btn.disabled=false;
+
+return;
+}
+
+const selectedCategory=
+document.getElementById(
+'uploadCat'
+)?.value||
+'未分类';
+
+const uploadTags=
+normalizeTags(
+state.uploadTags||[]
+);
+
+const newVideos=[];
+
+for(
+let i=0;
+i<uploadFiles.length;
+i++
+){
+
+const file=
+uploadFiles[i];
+
+btn.textContent=
+uploadFiles.length>1
+?`生成缩略图 ${i+1}/${uploadFiles.length}…`
+:'生成缩略图…';
+
+const thumbnail=
+await createThumbnail(file);
+
+btn.textContent=
+uploadFiles.length>1
+?`保存 ${i+1}/${uploadFiles.length}…`
+:'保存原文件…';
+
+const blob=
+file.slice(
+0,
+file.size,
+file.type||
+'video/mp4'
+);
+
+const v={
+
+id:
+Date.now().toString(36)+
+Math.random()
+.toString(36)
+.slice(2,10),
+
+name:file.name,
+
+category:selectedCategory,
+
+tags:[...uploadTags],
+
+blob,
+
+size:file.size,
+
+type:file.type||
+'video/mp4',
+
+createdAt:
+Date.now()+i,
+
+thumbnail
+
+};
+
+newVideos.push(v);
+
+}
+
+const data={
+
+videos:[
+...state.data.videos,
+...newVideos
+]
+
+};
+
+await IDB.set(
+CONFIG.DB_KEY,
+data
+);
+
+state.data=data;
+
+state.selectedFiles=[];
+
+state.uploadTags=[];
+
+renderCats();
+
+renderFilterBar();
+
+renderVideos();
+
+updateStorage();
+
+updateBatchBar();
+
+closeModal('uploadModal');
+
+if(duplicateCount){
+
+toast(
+`成功上传 ${newVideos.length} 个视频，已跳过 ${duplicateCount} 个重复视频`
+);
+
+}else{
+
+toast(
+uploadFiles.length>1
+?`成功上传 ${uploadFiles.length} 个视频，原 MP4 已保存`
+:'上传成功，原 MP4 已保存'
+);
+
+}
+
+}catch(e){
+
+console.error(e);
+
+toast(
+'保存失败：'+
+(
+e.name==='QuotaExceededError'
+?'浏览器存储空间不足'
+:e.message
+),
+'error'
+);
+
+}finally{
+
+btn.textContent='上传';
+
+btn.disabled=
+state.selectedFiles.length===0;
+
+}
+}
+
+function deleteCat(name){
+
+if(
+name==='全部'||
+name==='未分类'
+){
+return;
+}
+
+const count=
+state.data.videos.filter(
+v=>(v.category||'未分类')===name
+).length;
+
+const message=
+count
+?`删除分类「${name}」后，${count} 个视频会移动到「未分类」，确定继续吗？`
+:`确定删除分类「${name}」吗？`;
+
+if(!confirm(message)){
+return;
+}
+
+state.data.videos.forEach(v=>{
+
+if(
+(v.category||'未分类')===name
+){
+v.category='未分类';
+}
+
+});
+
+state.cats=
+state.cats.filter(
+c=>c!==name
+);
+
+if(
+state.currentCat===name
+){
+state.currentCat='全部';
+
+const title=
+document.getElementById(
+'pageTitle'
+);
+
+if(title){
+title.textContent='全部视频';
+}
+}
+
+saveCats();
+
+saveVideos().then(ok=>{
+
+if(!ok)return;
 
 renderCats();
 renderFilterBar();
 renderVideos();
-updateVideoManagePanel();
+populateUploadCategories();
 
-closeModal('videoEditModal');
+toast(
+`已删除分类「${name}」`
+);
 
-toast('视频信息已更新');
+});
 }
 
-function injectSingleEditStyle(){
-if(document.getElementById('singleVideoEditStyle'))return;
+function openCategoryManager(){
 
-const style=document.createElement('style');
-style.id='singleVideoEditStyle';
+const body=
+document.getElementById(
+'catManageBody'
+);
 
-style.textContent=`
-.edit-video-name{
-font-size:13px;
-font-weight:600;
-line-height:1.5;
-margin-bottom:16px;
-word-break:break-all;
-color:#ddd;
-}
+if(!body)return;
 
-.edit-tag-input-row{
+body.innerHTML='';
+
+const list=
+document.createElement('div');
+
+list.style.cssText=`
 display:flex;
-gap:7px;
-}
-
-.edit-tag-input-row input{
-flex:1;
-min-width:0;
-background:#151515;
-border:1px solid #383838;
-border-radius:8px;
-padding:8px 10px;
-color:#eee;
-outline:none;
-}
-
-.edit-tag-input-row button{
-border:1px solid #383838;
-background:#222;
-color:#ddd;
-border-radius:8px;
-padding:8px 12px;
-cursor:pointer;
-}
-
-.edit-video-tag-list{
-display:flex;
-flex-wrap:wrap;
-gap:6px;
-margin-top:9px;
-}
-
-.edit-video-tag{
-border:1px solid rgba(255,255,255,.1);
-background:rgba(255,255,255,.06);
-color:#ccc;
-border-radius:999px;
-padding:5px 8px;
-font-size:11px;
-cursor:pointer;
-}
-
-#videoEditModal .form-group{
-margin-bottom:16px;
-}
-
-#videoEditModal select{
-box-sizing:border-box;
-width:100%;
-background:#151515;
-border:1px solid #383838;
-border-radius:8px;
-padding:9px 10px;
-color:#eee;
-outline:none;
-}
+flex-direction:column;
+gap:8px;
 `;
 
-document.head.appendChild(style);
+state.cats
+.filter(c=>c!=='全部')
+.forEach(category=>{
+
+const row=
+document.createElement('div');
+
+row.style.cssText=`
+display:flex;
+align-items:center;
+justify-content:space-between;
+gap:10px;
+padding:10px 12px;
+border:1px solid rgba(255,255,255,.08);
+border-radius:9px;
+background:rgba(255,255,255,.03);
+`;
+
+const left=
+document.createElement('div');
+
+left.style.cssText=`
+display:flex;
+align-items:center;
+gap:8px;
+min-width:0;
+`;
+
+left.innerHTML=`
+<span>${icon(category)}</span>
+<span style="
+overflow:hidden;
+text-overflow:ellipsis;
+white-space:nowrap;
+">
+${escapeHtml(category)}
+</span>
+`;
+
+row.appendChild(left);
+
+if(
+category!=='未分类'
+){
+
+const del=
+document.createElement('button');
+
+del.type='button';
+del.className='btn btn-secondary';
+
+del.style.cssText=`
+padding:6px 9px;
+font-size:11px;
+`;
+
+del.textContent='删除';
+
+del.addEventListener(
+'click',
+()=>{
+
+deleteCat(category);
+
+openCategoryManager();
+
+}
+);
+
+row.appendChild(del);
+
+}
+
+list.appendChild(row);
+
+});
+
+body.appendChild(list);
+
+openModal('catManageModal');
+}
+
+function setupBackup(){
+
+document.getElementById(
+'exportBtn'
+)?.addEventListener(
+'click',
+exportBackup
+);
+
+document.getElementById(
+'importBtn'
+)?.addEventListener(
+'click',
+()=>{
+
+resetImportModal();
+
+openModal('importModal');
+
+}
+);
+
+const drop=
+document.getElementById(
+'importDrop'
+);
+
+const input=
+document.getElementById(
+'importInput'
+);
+
+if(drop&&input){
+
+drop.addEventListener(
+'click',
+()=>{
+input.click();
+}
+);
+
+drop.addEventListener(
+'dragover',
+e=>{
+e.preventDefault();
+drop.classList.add('dragover');
+}
+);
+
+drop.addEventListener(
+'dragleave',
+()=>{
+drop.classList.remove('dragover');
+}
+);
+
+drop.addEventListener(
+'drop',
+e=>{
+
+e.preventDefault();
+
+drop.classList.remove(
+'dragover'
+);
+
+const file=
+e.dataTransfer.files?.[0];
+
+if(file){
+handleImportFile(file);
+}
+
+}
+);
+
+input.addEventListener(
+'change',
+e=>{
+
+const file=
+e.target.files?.[0];
+
+if(file){
+handleImportFile(file);
+}
+
+}
+);
+
+}
+
+document.getElementById(
+'importConfirmBtn'
+)?.addEventListener(
+'click',
+importBackup
+);
+
+}
+
+function resetImportModal(){
+
+state.importData=null;
+
+const input=
+document.getElementById(
+'importInput'
+);
+
+if(input){
+input.value='';
+}
+
+const name=
+document.getElementById(
+'importFileName'
+);
+
+if(name){
+name.textContent='';
+}
+
+const btn=
+document.getElementById(
+'importConfirmBtn'
+);
+
+if(btn){
+
+btn.disabled=true;
+btn.textContent='恢复';
+
+}
+
+}
+
+async function handleImportFile(file){
+
+if(
+!file.name.toLowerCase().endsWith(
+'.json'
+)&&
+file.type!=='application/json'
+){
+
+toast(
+'请选择 JSON 备份文件',
+'error'
+);
+
+return;
+}
+
+try{
+
+const text=
+await file.text();
+
+const data=
+JSON.parse(text);
+
+if(
+!data||
+typeof data!=='object'
+){
+
+throw new Error(
+'备份格式无效'
+);
+
+}
+
+if(
+!Array.isArray(data.videos)
+){
+
+throw new Error(
+'备份中没有视频数据'
+);
+
+}
+
+state.importData={
+videos:data.videos,
+cats:
+Array.isArray(data.cats)
+?data.cats
+:null
+};
+
+const name=
+document.getElementById(
+'importFileName'
+);
+
+if(name){
+
+name.textContent=
+`${file.name} · ${data.videos.length} 个视频`;
+
+}
+
+const btn=
+document.getElementById(
+'importConfirmBtn'
+);
+
+if(btn){
+btn.disabled=false;
+}
+
+}catch(e){
+
+console.error(e);
+
+state.importData=null;
+
+toast(
+'读取备份失败：'+e.message,
+'error'
+);
+
+}
+}
+
+async function exportBackup(){
+
+try{
+
+const videos=
+state.data.videos.map(v=>{
+
+const blob=
+asBlob(v);
+
+return{
+id:v.id,
+name:v.name,
+category:v.category||'未分类',
+tags:normalizeTags(v.tags),
+size:v.size||blob?.size||0,
+type:v.type||blob?.type||'video/mp4',
+createdAt:v.createdAt||v.date||Date.now(),
+data:blob
+?null
+:''
+};
+
+});
+
+const payload={
+version:2,
+exportedAt:Date.now(),
+cats:[...state.cats],
+videos
+};
+
+const serialized=[];
+
+for(
+const item of payload.videos
+){
+
+const original=
+state.data.videos.find(
+v=>v.id===item.id
+);
+
+const blob=
+original
+?asBlob(original)
+:null;
+
+let data='';
+
+if(blob){
+
+data=
+await blobToDataURL(blob);
+
+}
+
+serialized.push({
+...item,
+data
+});
+
+}
+
+const finalPayload={
+...payload,
+videos:serialized
+};
+
+const json=
+JSON.stringify(
+finalPayload
+);
+
+const blob=
+new Blob(
+[json],
+{type:'application/json'}
+);
+
+const url=
+URL.createObjectURL(blob);
+
+const a=
+document.createElement('a');
+
+a.href=url;
+
+a.download=
+`video-library-backup-${formatFileDate(
+Date.now()
+)}.json`;
+
+document.body.appendChild(a);
+
+a.click();
+
+a.remove();
+
+setTimeout(
+()=>{
+URL.revokeObjectURL(url);
+},
+1000
+);
+
+toast(
+`备份已导出，共 ${state.data.videos.length} 个视频`
+);
+
+}catch(e){
+
+console.error(e);
+
+toast(
+'导出失败：'+e.message,
+'error'
+);
+
+}
+}
+
+function formatFileDate(ts){
+
+const d=new Date(ts);
+
+const y=d.getFullYear();
+const m=String(
+d.getMonth()+1
+).padStart(2,'0');
+
+const day=String(
+d.getDate()
+).padStart(2,'0');
+
+const h=String(
+d.getHours()
+).padStart(2,'0');
+
+const min=String(
+d.getMinutes()
+).padStart(2,'0');
+
+return `${y}${m}${day}-${h}${min}`;
+}
+
+function blobToDataURL(blob){
+
+return new Promise(
+(resolve,reject)=>{
+
+const reader=
+new FileReader();
+
+reader.onload=()=>{
+resolve(
+reader.result
+);
+};
+
+reader.onerror=()=>{
+reject(
+reader.error||
+new Error(
+'文件读取失败'
+)
+);
+};
+
+reader.readAsDataURL(blob);
+
+}
+);
+}
+
+function dataURLToBlob(dataURL){
+
+try{
+
+const parts=
+dataURL.split(',');
+
+if(parts.length<2){
+return null;
+}
+
+const meta=parts[0];
+
+const data=parts
+.slice(1)
+.join(',');
+
+const mime=
+meta.match(
+/data:([^;]+)/
+)?.[1]||
+'application/octet-stream';
+
+const binary=
+atob(data);
+
+const bytes=
+new Uint8Array(
+binary.length
+);
+
+for(
+let i=0;
+i<binary.length;
+i++
+){
+bytes[i]=
+binary.charCodeAt(i);
+}
+
+return new Blob(
+[bytes],
+{type:mime}
+);
+
+}catch(e){
+
+console.error(
+'DataURL 转 Blob 失败:',
+e
+);
+
+return null;
+}
+
+}
+
+async function importBackup(){
+
+const data=
+state.importData;
+
+if(!data)return;
+
+const btn=
+document.getElementById(
+'importConfirmBtn'
+);
+
+if(btn){
+
+btn.disabled=true;
+btn.textContent='恢复中…';
+
+}
+
+try{
+
+const videos=[];
+
+for(
+const raw of data.videos
+){
+
+if(
+!raw||
+typeof raw!=='object'
+)continue;
+
+let blob=null;
+
+if(
+typeof raw.data==='string'&&
+raw.data.startsWith('data:')
+){
+
+blob=dataURLToBlob(
+raw.data
+);
+
+}
+
+if(!blob&&raw.blob){
+
+blob=asBlob(raw);
+
+}
+
+if(
+!blob&&
+typeof raw.size==='number'&&
+raw.size>0
+){
+
+console.warn(
+'备份视频缺少实际文件:',
+raw.name
+);
+
+}
+
+videos.push({
+
+id:
+raw.id||
+(
+crypto.randomUUID
+?crypto.randomUUID()
+:`${Date.now()}_${Math.random()}`
+),
+
+name:
+raw.name||
+'未命名视频',
+
+category:
+raw.category||
+'未分类',
+
+tags:
+normalizeTags(raw.tags),
+
+size:
+blob?.size||
+Number(raw.size)||
+0,
+
+type:
+blob?.type||
+raw.type||
+'video/mp4',
+
+blob,
+
+createdAt:
+Number(raw.createdAt)||
+Date.now()
+
+});
+
+}
+
+const cats=
+Array.isArray(data.cats)
+?data.cats
+:null;
+
+if(cats){
+
+const normalized=[
+...new Set(
+cats
+.map(c=>String(c).trim())
+.filter(Boolean)
+)
+];
+
+if(!normalized.includes('全部')){
+normalized.unshift('全部');
+}
+
+if(!normalized.includes('未分类')){
+normalized.push('未分类');
+}
+
+state.cats=normalized;
+
+saveCats();
+
+}
+
+state.data={
+videos
+};
+
+state.objectUrls.forEach(
+url=>URL.revokeObjectURL(url)
+);
+
+state.objectUrls.clear();
+
+state.selectedIds.clear();
+
+if(
+!await saveVideos()
+){
+
+return;
+}
+
+state.currentCat='全部';
+state.currentTag='全部';
+state.selectedTags.clear();
+
+const title=
+document.getElementById(
+'pageTitle'
+);
+
+if(title){
+title.textContent='全部视频';
+}
+
+closeModal('importModal');
+
+renderCats();
+renderFilterBar();
+renderVideos();
+updateBatchBar();
+populateUploadCategories();
+
+toast(
+`恢复完成，共 ${videos.length} 个视频`
+);
+
+state.importData=null;
+
+}catch(e){
+
+console.error(e);
+
+toast(
+'恢复失败：'+e.message,
+'error'
+);
+
+}finally{
+
+if(btn){
+
+btn.disabled=
+!state.importData;
+
+btn.textContent='恢复';
+
+}
+
+}
+}
+
+function repairLegacyData(){
+
+let changed=false;
+
+if(
+!Array.isArray(
+state.data.videos
+)
+){
+
+state.data.videos=[];
+
+changed=true;
+
+}
+
+state.data.videos=
+state.data.videos.map(v=>{
+
+const item={
+...v
+};
+
+if(
+!item.id
+){
+
+item.id=
+crypto.randomUUID
+?crypto.randomUUID()
+:`${Date.now()}_${Math.random()}`;
+
+changed=true;
+
+}
+
+if(
+!item.name
+){
+
+item.name='未命名视频';
+
+changed=true;
+
+}
+
+if(
+!item.category||
+!state.cats.includes(
+item.category
+)
+){
+
+item.category='未分类';
+
+changed=true;
+
+}
+
+const tags=
+normalizeTags(item.tags);
+
+if(
+JSON.stringify(tags)!==
+JSON.stringify(
+item.tags||[]
+)
+){
+
+item.tags=tags;
+
+changed=true;
+
+}
+
+if(
+!item.createdAt
+){
+
+item.createdAt=
+item.date||
+Date.now();
+
+changed=true;
+
+}
+
+return item;
+
+});
+
+if(changed){
+
+IDB.set(
+CONFIG.DB_KEY,
+state.data
+).catch(
+console.error
+);
+
+}
+}
+
+function cleanupObjectUrls(){
+
+state.objectUrls.forEach(
+url=>{
+URL.revokeObjectURL(url);
+}
+);
+
+state.objectUrls.clear();
+}
+
+function setupPageEvents(){
+
+document.addEventListener(
+'visibilitychange',
+()=>{
+
+if(
+document.visibilityState==='hidden'
+){
+
+cleanupObjectUrls();
+
+}
+
+}
+);
+
+window.addEventListener(
+'beforeunload',
+cleanupObjectUrls
+);
+
+}
+
+async function init(){
+
+injectBaseStyle();
+
+setupSidebar();
+
+setupSelectionToolbar();
+
+setupUpload();
+
+setupModals();
+
+setupAddCategory();
+
+setupBackup();
+
+setupPageEvents();
+
+await loadData();
+
+}
+
+if(
+document.readyState==='loading'
+){
+
+document.addEventListener(
+'DOMContentLoaded',
+init,
+{once:true}
+);
+
+}else{
+
+init();
+
 }
