@@ -26,7 +26,8 @@ importData:null,
 objectUrls:new Map(),
 currentPlayerId:null,
 selectedIds:new Set(),
-batchMode:false
+batchMode:false,
+hideUploadedDuplicates:false
 };
 
 const IDB={
@@ -353,6 +354,7 @@ fill.classList.toggle(
 }
 }catch{}
 }
+
 function renderCats(){
 const list=document.getElementById('catList');
 if(!list)return;
@@ -556,8 +558,7 @@ checkbox.addEventListener(
 'click',
 e=>{
 e.stopPropagation();
-}
-);
+});
 
 checkbox.addEventListener(
 'change',
@@ -572,8 +573,7 @@ state.selectedIds.delete(v.id);
 
 updateBatchBar();
 renderVideos();
-}
-);
+});
 
 card.addEventListener(
 'click',
@@ -586,8 +586,7 @@ return;
 }
 
 playVideo(v);
-}
-);
+});
 
 card.querySelector(
 '.delete-btn'
@@ -596,8 +595,7 @@ card.querySelector(
 e=>{
 e.stopPropagation();
 deleteVideo(v.id);
-}
-);
+});
 
 grid.appendChild(card);
 });
@@ -977,11 +975,163 @@ allSelected
 :'全选';
 }
 
+/* ==================================================
+   上传相关
+   ================================================== */
+
+function isDuplicateVideo(file){
+if(!file)return false;
+
+return state.data.videos.some(v=>{
+const sameName=
+String(v.name||'').trim().toLowerCase()===
+String(file.name||'').trim().toLowerCase();
+
+const sameSize=
+Number(v.size||0)===Number(file.size||0);
+
+return sameName&&sameSize;
+});
+}
+
+function getSkipDuplicateSetting(){
+const checkbox=document.getElementById(
+'skipUploadedVideos'
+);
+
+return checkbox
+?checkbox.checked
+:true;
+}
+
+function injectDuplicateOption(){
+if(document.getElementById(
+'skipUploadedVideos'
+))return;
+
+const fileDrop=document.getElementById(
+'fileDrop'
+);
+
+if(!fileDrop)return;
+
+const wrap=document.createElement('label');
+
+wrap.id='duplicateOption';
+
+wrap.style.cssText=`
+display:flex;
+align-items:center;
+gap:8px;
+margin-top:12px;
+padding:10px 12px;
+border-radius:10px;
+background:rgba(255,255,255,.04);
+border:1px solid rgba(255,255,255,.08);
+cursor:pointer;
+font-size:13px;
+line-height:1.4;
+color:#d8d8d8;
+`;
+
+wrap.innerHTML=`
+<input
+id="skipUploadedVideos"
+type="checkbox"
+checked
+style="
+width:17px;
+height:17px;
+margin:0;
+cursor:pointer;
+flex:none;
+"
+>
+<span>
+已上传的视频不显示
+<small
+style="
+display:block;
+margin-top:2px;
+font-size:11px;
+opacity:.6;
+"
+>
+按「文件名 + 文件大小」判断重复视频
+</small>
+</span>
+`;
+
+fileDrop.insertAdjacentElement(
+'afterend',
+wrap
+);
+
+const checkbox=
+document.getElementById(
+'skipUploadedVideos'
+);
+
+checkbox?.addEventListener(
+'change',
+()=>{
+if(
+state.selectedFiles.length
+){
+refreshSelectedFilesDisplay();
+}
+}
+);
+}
+
+function refreshSelectedFilesDisplay(){
+const files=[...state.selectedFiles];
+
+const nameEl=document.getElementById(
+'fileName'
+);
+
+const btn=document.getElementById(
+'uploadConfirmBtn'
+);
+
+if(!nameEl||!btn)return;
+
+if(!files.length){
+nameEl.textContent='';
+btn.disabled=true;
+btn.textContent='上传';
+return;
+}
+
+const totalSize=
+files.reduce(
+(sum,f)=>sum+f.size,
+0
+);
+
+if(files.length===1){
+nameEl.textContent=
+`${files[0].name} · ${formatSize(files[0].size)}`;
+}else{
+nameEl.textContent=
+`已选择 ${files.length} 个视频 · 总计 ${formatSize(totalSize)}`;
+}
+
+btn.disabled=false;
+
+btn.textContent=
+files.length>1
+?`上传 ${files.length} 个视频`
+:'上传';
+}
+
 function openUpload(){
 const s=document.getElementById(
 'uploadCat'
 );
 
+if(s){
 s.innerHTML=
 state.cats
 .filter(c=>c!=='全部')
@@ -991,6 +1141,7 @@ ${escapeHtml(c)}
 </option>
 `)
 .join('');
+}
 
 state.selectedFiles=[];
 
@@ -999,19 +1150,40 @@ document.getElementById('fileInput');
 
 if(fileInput){
 fileInput.multiple=true;
+
+fileInput.setAttribute(
+'accept',
+'video/mp4,video/*'
+);
 }
 
-document.getElementById(
-'fileName'
-).textContent='';
+const nameEl=
+document.getElementById('fileName');
+
+if(nameEl){
+nameEl.textContent='';
+}
 
 const btn=
 document.getElementById(
 'uploadConfirmBtn'
 );
 
+if(btn){
 btn.disabled=true;
 btn.textContent='上传';
+}
+
+injectDuplicateOption();
+
+const duplicateCheckbox=
+document.getElementById(
+'skipUploadedVideos'
+);
+
+if(duplicateCheckbox){
+duplicateCheckbox.checked=true;
+}
 
 openModal('uploadModal');
 }
@@ -1022,6 +1194,11 @@ if(!fileList||!fileList.length)return;
 const files=[...fileList];
 
 const valid=[];
+
+let duplicateCount=0;
+
+const skipDuplicate=
+getSkipDuplicateSetting();
 
 for(const file of files){
 
@@ -1044,47 +1221,65 @@ toast(
 continue;
 }
 
+if(
+skipDuplicate&&
+isDuplicateVideo(file)
+){
+duplicateCount++;
+continue;
+}
+
 valid.push(file);
 }
 
-if(!valid.length)return;
+if(duplicateCount>0){
 
-state.selectedFiles=valid;
+if(valid.length){
 
-const totalSize=
-valid.reduce(
-(sum,f)=>sum+f.size,
-0
+toast(
+`已过滤 ${duplicateCount} 个已上传视频`,
+'error'
 );
-
-const nameEl=
-document.getElementById('fileName');
-
-if(nameEl){
-
-if(valid.length===1){
-
-nameEl.textContent=
-`${valid[0].name} · ${formatSize(valid[0].size)}`;
 
 }else{
 
-nameEl.textContent=
-`已选择 ${valid.length} 个视频 · 总计 ${formatSize(totalSize)}`;
+toast(
+`选择的视频都已上传，共过滤 ${duplicateCount} 个`,
+'error'
+);
 }
 }
+
+if(!valid.length){
+
+state.selectedFiles=[];
+
+const nameEl=
+document.getElementById('fileName');
 
 const btn=
 document.getElementById(
 'uploadConfirmBtn'
 );
 
-btn.disabled=false;
+if(nameEl){
+nameEl.textContent=
+duplicateCount
+?`已过滤 ${duplicateCount} 个重复视频`
+:'';
+}
 
-btn.textContent=
-valid.length>1
-?`上传 ${valid.length} 个视频`
-:'上传';
+if(btn){
+btn.disabled=true;
+btn.textContent='上传';
+}
+
+return;
+}
+
+state.selectedFiles=valid;
+
+refreshSelectedFilesDisplay();
 }
 
 function handleFile(file){
@@ -1095,6 +1290,7 @@ handleFiles([file]);
 
 async function checkSpace(n){
 try{
+
 const e=
 await navigator.storage?.estimate?.();
 
@@ -1236,8 +1432,66 @@ btn.disabled=true;
 
 try{
 
-let totalSize=
-files.reduce(
+/*
+==================================================
+再次检查重复视频
+==================================================
+
+这里故意再检查一次。
+
+因为用户打开上传窗口以后，
+视频库可能已经发生变化。
+
+例如：
+
+1. 打开上传窗口
+2. 选择 A.mp4
+3. 另一个操作已经把 A.mp4 保存进视频库
+4. 再点击上传
+
+因此最终真正保存之前再检查一次。
+==================================================
+*/
+
+const skipDuplicate=
+getSkipDuplicateSetting();
+
+const uploadFiles=[];
+
+let duplicateCount=0;
+
+for(const file of files){
+
+if(
+skipDuplicate&&
+isDuplicateVideo(file)
+){
+duplicateCount++;
+continue;
+}
+
+uploadFiles.push(file);
+}
+
+if(!uploadFiles.length){
+
+state.selectedFiles=[];
+
+btn.textContent='上传';
+btn.disabled=true;
+
+toast(
+duplicateCount
+?`没有需要上传的视频，已跳过 ${duplicateCount} 个重复视频`
+:'没有需要上传的视频',
+'error'
+);
+
+return;
+}
+
+const totalSize=
+uploadFiles.reduce(
 (sum,f)=>sum+f.size,
 0
 );
@@ -1245,32 +1499,39 @@ files.reduce(
 btn.textContent='检查空间…';
 
 if(!(await checkSpace(totalSize))){
+
 btn.disabled=false;
+
 return;
 }
 
 const selectedCategory=
 document.getElementById(
 'uploadCat'
-).value||'未分类';
+)?.value||'未分类';
 
 const newVideos=[];
 
-for(let i=0;i<files.length;i++){
+for(
+let i=0;
+i<uploadFiles.length;
+i++
+){
 
-const file=files[i];
+const file=
+uploadFiles[i];
 
 btn.textContent=
-files.length>1
-?`生成缩略图 ${i+1}/${files.length}…`
+uploadFiles.length>1
+?`生成缩略图 ${i+1}/${uploadFiles.length}…`
 :'生成缩略图…';
 
 const thumbnail=
 await createThumbnail(file);
 
 btn.textContent=
-files.length>1
-?`保存 ${i+1}/${files.length}…`
+uploadFiles.length>1
+?`保存 ${i+1}/${uploadFiles.length}…`
 :'保存原文件…';
 
 const blob=
@@ -1295,7 +1556,8 @@ size:file.size,
 
 type:file.type||'video/mp4',
 
-createdAt:Date.now()+i,
+createdAt:
+Date.now()+i,
 
 thumbnail
 };
@@ -1326,11 +1588,20 @@ updateBatchBar();
 
 closeModal('uploadModal');
 
+if(duplicateCount){
+
 toast(
-files.length>1
-?`成功上传 ${files.length} 个视频，原 MP4 已保存`
+`成功上传 ${newVideos.length} 个视频，已跳过 ${duplicateCount} 个重复视频`
+);
+
+}else{
+
+toast(
+uploadFiles.length>1
+?`成功上传 ${uploadFiles.length} 个视频，原 MP4 已保存`
 :'上传成功，原 MP4 已保存'
 );
+}
 
 }catch(e){
 
@@ -1354,6 +1625,11 @@ btn.disabled=
 state.selectedFiles.length===0;
 }
 }
+
+
+/* ==================================================
+   备份 / 恢复
+   ================================================== */
 
 function dataURLToBlob(s){
 const [head,body]=s.split(',',2);
@@ -1408,7 +1684,9 @@ r.readAsDataURL(b);
 }
 
 async function exportBackup(){
+
 if(!state.data.videos.length){
+
 return toast(
 '暂无视频可备份',
 'error'
@@ -1436,8 +1714,11 @@ const b=asBlob(v);
 if(!b)continue;
 
 videos.push({
+
 id:v.id,
+
 name:v.name,
+
 category:v.category,
 
 data:
@@ -1449,7 +1730,8 @@ type:
 v.type||
 b.type,
 
-createdAt:v.createdAt,
+createdAt:
+v.createdAt,
 
 thumbnail:
 v.thumbnail||''
@@ -1457,16 +1739,26 @@ v.thumbnail||''
 }
 
 const payload={
+
 version:3,
-exportedAt:Date.now(),
-categories:state.cats,
+
+exportedAt:
+Date.now(),
+
+categories:
+state.cats,
+
 videos
 };
 
 const blob=
 new Blob(
-[JSON.stringify(payload)],
-{type:'application/json'}
+[
+JSON.stringify(payload)
+],
+{
+type:'application/json'
+}
 );
 
 const u=
@@ -1502,11 +1794,14 @@ toast(
 }finally{
 
 btn.disabled=false;
-btn.textContent='📥 导出备份';
+
+btn.textContent=
+'📥 导出备份';
 }
 }
 
 function openImport(){
+
 state.importData=null;
 
 document.getElementById(
@@ -1521,9 +1816,11 @@ openModal('importModal');
 }
 
 function handleImport(file){
+
 if(!file)return;
 
 if(!/\.json$/i.test(file.name)){
+
 return toast(
 '请选择 JSON 备份文件',
 'error'
@@ -1534,6 +1831,7 @@ const r=
 new FileReader();
 
 r.onload=()=>{
+
 try{
 
 const o=
@@ -1543,6 +1841,7 @@ if(
 !Array.isArray(o.videos)||
 !Array.isArray(o.categories)
 ){
+
 throw new Error(
 '备份格式不正确'
 );
@@ -1579,7 +1878,9 @@ r.readAsText(file);
 }
 
 async function doImport(){
-const o=state.importData;
+
+const o=
+state.importData;
 
 if(!o)return;
 
@@ -1609,7 +1910,8 @@ i<o.videos.length;
 i++
 ){
 
-const v=o.videos[i];
+const v=
+o.videos[i];
 
 btn.textContent=
 o.videos.length>1
@@ -1620,7 +1922,9 @@ const b=
 dataURLToBlob(v.data);
 
 videos.push({
+
 id:v.id,
+
 name:v.name,
 
 category:
@@ -1657,10 +1961,12 @@ c.trim()
 ];
 
 if(!cats.includes('全部')){
+
 cats.unshift('全部');
 }
 
 if(!cats.includes('未分类')){
+
 cats.splice(
 1,
 0,
@@ -1679,7 +1985,9 @@ u=>URL.revokeObjectURL(u)
 
 state.objectUrls.clear();
 
-state.data={videos};
+state.data={
+videos
+};
 
 state.cats=cats;
 
@@ -1691,7 +1999,8 @@ state.selectedIds.clear();
 
 document.getElementById(
 'pageTitle'
-).textContent='全部视频';
+).textContent=
+'全部视频';
 
 renderCats();
 renderVideos();
@@ -1718,7 +2027,13 @@ btn.disabled=
 }
 }
 
+
+/* ==================================================
+   分类管理
+   ================================================== */
+
 function openAddCat(){
+
 document.getElementById(
 'newCatName'
 ).value='';
@@ -1733,6 +2048,7 @@ document.getElementById(
 }
 
 function addCat(){
+
 const i=
 document.getElementById(
 'newCatName'
@@ -1742,6 +2058,7 @@ const n=
 i.value.trim();
 
 if(!n){
+
 return toast(
 '请输入分类名称',
 'error'
@@ -1749,6 +2066,7 @@ return toast(
 }
 
 if(state.cats.includes(n)){
+
 return toast(
 '分类已存在',
 'error'
@@ -1768,6 +2086,7 @@ toast('分类添加成功');
 }
 
 async function deleteCat(c){
+
 if(
 c==='全部'||
 c==='未分类'
@@ -1790,7 +2109,9 @@ count
 return;
 }
 
-const cats=[...state.cats];
+const cats=[
+...state.cats
+];
 
 const videos=
 state.data.videos.map(
@@ -1803,6 +2124,7 @@ x=>x!==c
 );
 
 state.data.videos.forEach(v=>{
+
 if(v.category===c){
 v.category='未分类';
 }
@@ -1822,7 +2144,9 @@ await saveVideos()
 ){
 
 state.cats=cats;
-state.data.videos=videos;
+
+state.data.videos=
+videos;
 
 return;
 }
@@ -1844,6 +2168,7 @@ toast('分类已删除');
 }
 
 function openCatManage(){
+
 const b=
 document.getElementById(
 'catManageBody'
@@ -1863,7 +2188,9 @@ if(!cats.length){
 b.innerHTML=
 '<div class="manage-empty">暂无可管理的自定义分类</div>';
 
-openModal('catManageModal');
+openModal(
+'catManageModal'
+);
 
 return;
 }
@@ -1877,16 +2204,26 @@ item.className=
 'cat-manage-item';
 
 item.innerHTML=`
+
 <div class="cat-left">
-<span>${icon(c)}</span>
+
+<span>
+${icon(c)}
+</span>
+
 <input
 value="${escapeHtml(c)}"
 maxlength="30"
 >
+
 </div>
 
 <div class="cat-actions">
-<button title="删除">🗑</button>
+
+<button title="删除">
+🗑
+</button>
+
 </div>
 `;
 
@@ -1916,7 +2253,9 @@ deleteCat(c);
 b.appendChild(item);
 });
 
-openModal('catManageModal');
+openModal(
+'catManageModal'
+);
 }
 
 async function renameCat(
@@ -1924,15 +2263,19 @@ oldName,
 newName,
 input
 ){
+
 if(
 !newName||
 newName===oldName
 ){
+
 input.value=oldName;
+
 return;
 }
 
 if(state.cats.includes(newName)){
+
 toast(
 '分类名称已存在',
 'error'
@@ -1954,6 +2297,7 @@ v=>({...v})
 state.cats[idx]=newName;
 
 state.data.videos.forEach(v=>{
+
 if(v.category===oldName){
 v.category=newName;
 }
@@ -1998,17 +2342,27 @@ openCatManage();
 toast('重命名成功');
 }
 
+
+/* ==================================================
+   多选上传 / 批量操作样式
+   ================================================== */
+
 function injectMultiUploadStyle(){
-if(document.getElementById(
+
+if(
+document.getElementById(
 'multiUploadStyle'
-))return;
+)
+)return;
 
 const style=
 document.createElement('style');
 
-style.id='multiUploadStyle';
+style.id=
+'multiUploadStyle';
 
 style.textContent=`
+
 #fileName{
 white-space:pre-line;
 }
@@ -2017,25 +2371,56 @@ white-space:pre-line;
 white-space:nowrap;
 }
 
+#duplicateOption{
+box-sizing:border-box;
+}
+
+#duplicateOption input{
+accent-color:currentColor;
+}
+
 @media(max-width:560px){
 
 #batchActionBar{
+
 bottom:12px!important;
+
 padding:8px!important;
+
 gap:5px!important;
 }
 
 #batchActionBar button{
-padding:7px 8px!important;
-font-size:11px!important;
+
+padding:
+7px 8px!important;
+
+font-size:
+11px!important;
 }
 
 #batchCount{
-font-size:11px!important;
+
+font-size:
+11px!important;
 }
 
 .video-select{
+
 display:flex!important;
+}
+
+#duplicateOption{
+
+margin-left:0!important;
+margin-right:0!important;
+
+font-size:12px!important;
+}
+
+#duplicateOption small{
+
+font-size:10px!important;
 }
 }
 `;
@@ -2044,6 +2429,7 @@ document.head.appendChild(style);
 }
 
 function setupMultipleFileInput(){
+
 const input=
 document.getElementById(
 'fileInput'
@@ -2060,6 +2446,7 @@ input.setAttribute(
 }
 
 function bind(){
+
 const on=(id,e,fn)=>{
 document.getElementById(id)
 ?.addEventListener(e,fn);
@@ -2131,7 +2518,9 @@ on(
 ()=>{
 const v=
 state.data.videos.find(
-x=>x.id===state.currentPlayerId
+x=>
+x.id===
+state.currentPlayerId
 );
 
 if(v){
@@ -2144,6 +2533,7 @@ on(
 'fileInput',
 'change',
 e=>{
+
 handleFiles(
 e.target.files
 );
@@ -2156,6 +2546,7 @@ on(
 'importInput',
 'change',
 e=>{
+
 handleImport(
 e.target.files[0]
 );
@@ -2169,6 +2560,7 @@ document
 '[data-close]'
 )
 .forEach(b=>{
+
 b.addEventListener(
 'click',
 ()=>{
@@ -2184,9 +2576,11 @@ document
 '.modal-overlay'
 )
 .forEach(o=>{
+
 o.addEventListener(
 'click',
 e=>{
+
 if(e.target===o){
 closeModal(o.id);
 }
@@ -2199,6 +2593,7 @@ id,
 input,
 handler
 )=>{
+
 const d=
 document.getElementById(id);
 
@@ -2207,6 +2602,7 @@ if(!d)return;
 d.addEventListener(
 'click',
 ()=>{
+
 document.getElementById(
 input
 )?.click();
@@ -2216,7 +2612,9 @@ input
 d.addEventListener(
 'dragover',
 e=>{
+
 e.preventDefault();
+
 d.classList.add(
 'dragover'
 );
@@ -2226,6 +2624,7 @@ d.classList.add(
 d.addEventListener(
 'dragleave',
 ()=>{
+
 d.classList.remove(
 'dragover'
 );
@@ -2235,6 +2634,7 @@ d.classList.remove(
 d.addEventListener(
 'drop',
 e=>{
+
 e.preventDefault();
 
 d.classList.remove(
@@ -2244,6 +2644,7 @@ d.classList.remove(
 if(
 e.dataTransfer?.files?.length
 ){
+
 handler(
 e.dataTransfer.files
 );
@@ -2272,6 +2673,7 @@ on(
 'newCatName',
 'keydown',
 e=>{
+
 if(e.key==='Enter'){
 addCat();
 }
@@ -2281,6 +2683,7 @@ addCat();
 document.addEventListener(
 'keydown',
 e=>{
+
 if(e.key==='Escape'){
 
 [
@@ -2306,7 +2709,13 @@ u=>URL.revokeObjectURL(u)
 );
 }
 
+
+/* ==================================================
+   上传弹窗初始化
+   ================================================== */
+
 function prepareUploadModal(){
+
 const fileInput=
 document.getElementById(
 'fileInput'
@@ -2335,13 +2744,22 @@ drop.querySelector(
 );
 
 if(hint){
+
 hint.textContent=
-'可一次选择多个 MP4，原始文件直接保存，不转码、不压缩';
-}
+'可一次选择多个视频，原始文件直接保存，不转码、不压缩';
 }
 }
 
+injectDuplicateOption();
+}
+
+
+/* ==================================================
+   批量选择辅助
+   ================================================== */
+
 function createBatchSelectionHelp(){
+
 const content=
 document.getElementById(
 'content'
@@ -2351,26 +2769,37 @@ if(!content)return;
 
 /*
 不额外改变原页面结构。
+
 批量操作栏只在用户勾选视频后出现。
 */
 }
 
+
+/* ==================================================
+   旧数据修复
+   ================================================== */
+
 function repairLegacyData(){
+
 if(!Array.isArray(
 state.data.videos
 )){
+
 state.data.videos=[];
 }
 
 state.data.videos=
 state.data.videos.filter(
-v=>v&&typeof v==='object'
+v=>
+v&&
+typeof v==='object'
 );
 
 state.data.videos.forEach(
 v=>{
 
 if(!v.id){
+
 v.id=
 Date.now().toString(36)+
 Math.random()
@@ -2379,24 +2808,33 @@ Math.random()
 }
 
 if(!v.name){
-v.name='未命名视频.mp4';
+
+v.name=
+'未命名视频.mp4';
 }
 
 if(!v.category){
-v.category='未分类';
+
+v.category=
+'未分类';
 }
 
 if(!v.type){
-v.type='video/mp4';
+
+v.type=
+'video/mp4';
 }
 
 if(!v.createdAt){
-v.createdAt=Date.now();
+
+v.createdAt=
+Date.now();
 }
 
 if(!v.size){
 
-const b=asBlob(v);
+const b=
+asBlob(v);
 
 if(b){
 v.size=b.size;
@@ -2407,6 +2845,7 @@ v.size=b.size;
 }
 
 function cleanupSelection(){
+
 const validIds=
 new Set(
 state.data.videos.map(
@@ -2418,18 +2857,26 @@ state.selectedIds=
 new Set(
 [...state.selectedIds]
 .filter(
-id=>validIds.has(id)
+id=>
+validIds.has(id)
 )
 );
 }
 
 function initBatchBar(){
+
 updateBatchBar();
 }
+
+
+/* ==================================================
+   初始化
+   ================================================== */
 
 document.addEventListener(
 'DOMContentLoaded',
 async()=>{
+
 bind();
 
 injectMultiUploadStyle();
@@ -2453,6 +2900,7 @@ renderVideos();
 initBatchBar();
 }
 );
+
 
 /*
 ====================================================
@@ -2479,14 +2927,65 @@ initBatchBar();
 18. 移动端侧边栏
 19. Toast 提示
 20. 旧 Base64 数据兼容
+21. 多选上传
+22. 上传时自动过滤重复视频
+23. 可关闭「已上传的视频不显示」
 ====================================================
 
 多选上传：
 
 手机或电脑点击「上传视频」后，
-文件选择器现在允许一次选择多个视频。
+文件选择器允许一次选择多个视频。
 
 拖拽上传也支持多个文件。
+
+重复视频过滤：
+
+上传窗口中默认开启：
+
+「已上传的视频不显示」
+
+程序会根据：
+
+文件名 + 文件大小
+
+判断当前选择的视频是否已经存在于视频库。
+
+如果已经存在，
+该视频不会进入上传队列。
+
+例如：
+
+视频库已有：
+
+example.mp4
+大小：120 MB
+
+再次选择：
+
+example.mp4
+大小：120 MB
+
+程序会自动过滤。
+
+如果关闭：
+
+「已上传的视频不显示」
+
+则允许再次上传同名同大小的视频。
+
+注意：
+
+这里使用「文件名 + 文件大小」作为快速判断条件。
+
+如果两个不同的视频恰好拥有完全相同的文件名和文件大小，
+开启过滤时也会被认为是重复视频。
+
+这样做的优点是：
+
+不需要读取整个视频计算 Hash，
+不会因为大视频产生额外的巨大内存和 CPU 开销，
+尤其适合手机端。
 
 多选下载：
 
@@ -2502,8 +3001,13 @@ initBatchBar();
 浏览器会依次触发下载。
 
 注意：
-浏览器本身可能会对连续下载进行拦截，
-如果浏览器提示“允许多个下载”，
+
+浏览器本身可能会对连续下载进行拦截。
+
+如果浏览器提示：
+
+「允许多个下载」
+
 选择允许即可。
 
 ====================================================
