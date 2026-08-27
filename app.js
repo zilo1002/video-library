@@ -4,16 +4,7 @@ DB_VERSION:2,
 STORE:'library',
 DB_KEY:'videoLib_v1',
 CAT_KEY:'videoLib_cats_v1',
-
-DEFAULT_CATS:[
-'全部',
-'未分类',
-'教程',
-'电影',
-'音乐',
-'其他'
-],
-
+DEFAULT_CATS:['全部','未分类','教程','电影','音乐','其他'],
 ICONS:{
 '全部':'📁',
 '未分类':'📄',
@@ -22,353 +13,208 @@ ICONS:{
 '音乐':'🎵',
 '其他':'📦'
 },
-
 MAX_FILE_SIZE:2*1024*1024*1024,
-STORAGE_RESERVE:10*1024*1024,
-
-VIDEO_TYPE:'video/mp4',
-VIDEO_EXTENSION:'.mp4'
+STORAGE_RESERVE:10*1024*1024
 };
-
 
 const state={
 data:{videos:[]},
 cats:[...CONFIG.DEFAULT_CATS],
 currentCat:'全部',
-selectedFile:null,
+selectedFiles:[],
 importData:null,
 objectUrls:new Map(),
-currentPlayerId:null
+currentPlayerId:null,
+selectedIds:new Set(),
+batchMode:false
 };
 
-
 const IDB={
-
 db:null,
 
 open(){
-
 return new Promise((resolve,reject)=>{
-
 if(this.db)return resolve(this.db);
 
-const r=indexedDB.open(
-CONFIG.DB_NAME,
-CONFIG.DB_VERSION
-);
+const r=indexedDB.open(CONFIG.DB_NAME,CONFIG.DB_VERSION);
 
 r.onupgradeneeded=e=>{
-
 const db=e.target.result;
-
 if(!db.objectStoreNames.contains(CONFIG.STORE)){
 db.createObjectStore(CONFIG.STORE);
 }
-
 };
 
 r.onsuccess=e=>{
-
 this.db=e.target.result;
-
 this.db.onversionchange=()=>{
 this.db.close();
+this.db=null;
 };
-
 resolve(this.db);
-
 };
 
 r.onerror=()=>{
-reject(
-r.error||new Error('IndexedDB 打开失败')
-);
+reject(r.error||new Error('IndexedDB 打开失败'));
 };
-
 });
-
 },
 
 get(key){
-
-return this.open().then(db=>
-
-new Promise((res,rej)=>{
-
-const r=db
-.transaction(CONFIG.STORE,'readonly')
+return this.open().then(db=>new Promise((res,rej)=>{
+const r=db.transaction(CONFIG.STORE,'readonly')
 .objectStore(CONFIG.STORE)
 .get(key);
 
-r.onsuccess=()=>{
-res(r.result);
-};
-
-r.onerror=()=>{
-rej(r.error);
-};
-
-})
-
-);
-
+r.onsuccess=()=>res(r.result);
+r.onerror=()=>rej(r.error);
+}));
 },
 
 set(key,value){
+return this.open().then(db=>new Promise((res,rej)=>{
+const tx=db.transaction(CONFIG.STORE,'readwrite');
 
-return this.open().then(db=>
+tx.objectStore(CONFIG.STORE).put(value,key);
 
-new Promise((res,rej)=>{
-
-const tx=db.transaction(
-CONFIG.STORE,
-'readwrite'
-);
-
-tx.objectStore(CONFIG.STORE)
-.put(value,key);
-
-tx.oncomplete=()=>{
-res();
-};
+tx.oncomplete=()=>res();
 
 tx.onerror=()=>{
-rej(
-tx.error||
-new Error('IndexedDB 写入失败')
-);
+rej(tx.error||new Error('IndexedDB 写入失败'));
 };
 
 tx.onabort=()=>{
-rej(
-tx.error||
-new Error('IndexedDB 写入中止')
-);
+rej(tx.error||new Error('IndexedDB 写入中止'));
 };
-
-})
-
-);
-
+}));
 }
-
 };
-
 
 function escapeHtml(s=''){
-
 const d=document.createElement('div');
-
 d.textContent=String(s);
-
 return d.innerHTML;
-
 }
-
 
 function formatSize(n=0){
-
-if(n<1024)
-return n+' B';
-
-if(n<1048576)
-return (n/1024).toFixed(1)+' KB';
-
-if(n<1073741824)
-return (n/1048576).toFixed(2)+' MB';
-
-return (n/1073741824).toFixed(2)+' GB';
-
+if(n<1024)return n+' B';
+if(n<1048576)return(n/1024).toFixed(1)+' KB';
+if(n<1073741824)return(n/1048576).toFixed(2)+' MB';
+return(n/1073741824).toFixed(2)+' GB';
 }
-
 
 function formatDate(ts){
-
 const d=new Date(ts);
-
 return `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
-
 }
-
 
 function icon(c){
-
 return CONFIG.ICONS[c]||'🏷️';
-
 }
 
-
 function toast(msg,type='success'){
-
 const t=document.getElementById('toast');
-
 if(!t)return;
 
 t.textContent=msg;
-
 t.className=`toast ${type} show`;
 
 clearTimeout(toast.timer);
 
-toast.timer=setTimeout(
-()=>{
+toast.timer=setTimeout(()=>{
 t.classList.remove('show');
-},
-3000
-);
-
+},3000);
 }
-
 
 function openModal(id){
-
-document
-.getElementById(id)
-?.classList.add('active');
-
+document.getElementById(id)?.classList.add('active');
 }
 
-
 function closeModal(id){
-
 const el=document.getElementById(id);
-
 if(!el)return;
 
 el.classList.remove('active');
 
 if(id==='playerModal'){
-
 const v=document.getElementById('playerVideo');
 
 if(v){
-
 v.pause();
 v.removeAttribute('src');
 v.load();
-
 }
 
 state.currentPlayerId=null;
-
 }
-
 }
-
 
 function closeSidebar(){
-
-document
-.getElementById('sidebar')
-?.classList.remove('open');
-
-document
-.getElementById('sidebarOverlay')
-?.classList.remove('active');
-
+document.getElementById('sidebar')?.classList.remove('open');
+document.getElementById('sidebarOverlay')?.classList.remove('active');
 }
-
 
 function toggleSidebar(){
-
-document
-.getElementById('sidebar')
-?.classList.toggle('open');
-
-document
-.getElementById('sidebarOverlay')
-?.classList.toggle('active');
-
+document.getElementById('sidebar')?.classList.toggle('open');
+document.getElementById('sidebarOverlay')?.classList.toggle('active');
 }
 
-
 function asBlob(v){
-
 if(!v)return null;
 
 try{
+if(v.blob instanceof Blob)return v.blob;
 
-if(v.blob instanceof Blob)
-return v.blob;
-
-if(v.blob)
+if(v.blob){
 return new Blob(
 [v.blob],
-{
-type:v.type||CONFIG.VIDEO_TYPE
-}
+{type:v.type||'video/mp4'}
 );
+}
 
-if(v.buffer instanceof ArrayBuffer)
+if(v.buffer instanceof ArrayBuffer){
 return new Blob(
 [v.buffer],
-{
-type:v.type||CONFIG.VIDEO_TYPE
-}
+{type:v.type||'video/mp4'}
 );
-
-if(
-typeof v.data==='string' &&
-v.data.startsWith('data:')
-){
-
-return dataURLToBlob(v.data);
-
 }
 
+if(typeof v.data==='string'&&v.data.startsWith('data:')){
+return dataURLToBlob(v.data);
+}
 }catch(e){
-
 console.error(e);
-
 }
 
 return null;
-
 }
 
-
 function videoUrl(v){
-
 const b=asBlob(v);
-
 if(!b)return '';
 
 if(!state.objectUrls.has(v.id)){
-
 state.objectUrls.set(
 v.id,
 URL.createObjectURL(b)
 );
-
 }
 
 return state.objectUrls.get(v.id);
-
 }
 
-
 function revoke(id){
-
 const u=state.objectUrls.get(id);
 
 if(u){
-
 URL.revokeObjectURL(u);
-
 state.objectUrls.delete(id);
-
 }
-
 }
-
 
 async function loadData(){
-
 try{
-
-const c=localStorage.getItem(
-CONFIG.CAT_KEY
-);
+const c=localStorage.getItem(CONFIG.CAT_KEY);
 
 state.cats=c
 ?JSON.parse(c)
@@ -379,20 +225,13 @@ if(
 !state.cats.includes('全部')||
 !state.cats.includes('未分类')
 ){
-
 state.cats=[...CONFIG.DEFAULT_CATS];
-
 }
-
 }catch{
-
 state.cats=[...CONFIG.DEFAULT_CATS];
-
 }
-
 
 try{
-
 const d=await IDB.get(CONFIG.DB_KEY);
 
 state.data=
@@ -400,30 +239,21 @@ d&&Array.isArray(d.videos)
 ?d
 :{videos:[]};
 
-
 state.data.videos.forEach(v=>{
-
-if(!v.type)
-v.type=CONFIG.VIDEO_TYPE;
+if(!v.type)v.type='video/mp4';
 
 if(!v.size){
-
 const b=asBlob(v);
-
-if(b)
-v.size=b.size;
-
+if(b)v.size=b.size;
 }
-
 });
-
 
 renderCats();
 renderVideos();
 updateStorage();
+updateBatchBar();
 
 }catch(e){
-
 console.error(e);
 
 state.data={videos:[]};
@@ -435,41 +265,25 @@ toast(
 '视频库加载失败：'+e.message,
 'error'
 );
-
 }
-
 }
-
 
 function saveCats(){
-
 try{
-
 localStorage.setItem(
 CONFIG.CAT_KEY,
 JSON.stringify(state.cats)
 );
 
 return true;
-
 }catch{
-
-toast(
-'分类保存失败',
-'error'
-);
-
+toast('分类保存失败','error');
 return false;
-
 }
-
 }
-
 
 async function saveVideos(){
-
 try{
-
 await IDB.set(
 CONFIG.DB_KEY,
 state.data
@@ -478,59 +292,42 @@ state.data
 await updateStorage();
 
 return true;
-
 }catch(e){
-
 toast(
 '视频保存失败：'+e.message,
 'error'
 );
 
 return false;
-
 }
-
 }
-
 
 async function updateStorage(){
-
 let used=0;
 
-for(
-const v of state.data.videos
-){
-
+for(const v of state.data.videos){
 const b=asBlob(v);
 
-used+=
-b
+used+=b
 ?b.size
 :Number(v.size)||0;
-
 }
 
+const text=document.getElementById('storageText');
 
-document.getElementById(
-'storageText'
-).textContent=
+if(text){
+text.textContent=
 `视频占用 ${formatSize(used)} · ${state.data.videos.length} 个`;
-
+}
 
 try{
-
-const q=
-await navigator.storage?.estimate?.();
+const q=await navigator.storage?.estimate?.();
 
 const quota=q?.quota||0;
 
-const fill=
-document.getElementById(
-'storageFill'
-);
+const fill=document.getElementById('storageFill');
 
 if(fill){
-
 const den=
 quota||
 Math.max(
@@ -546,33 +343,23 @@ used/den*100
 
 fill.classList.toggle(
 'warning',
-quota&&used/quota>.7
+!!quota&&used/quota>.7
 );
 
 fill.classList.toggle(
 'danger',
-quota&&used/quota>.9
+!!quota&&used/quota>.9
 );
-
 }
-
 }catch{}
-
 }
-
-
 function renderCats(){
-
-const list=
-document.getElementById('catList');
-
+const list=document.getElementById('catList');
 if(!list)return;
 
 list.innerHTML='';
 
-
 state.cats.forEach(c=>{
-
 const count=
 c==='全部'
 ?state.data.videos.length
@@ -580,161 +367,108 @@ c==='全部'
 v=>(v.category||'未分类')===c
 ).length;
 
-
 const d=document.createElement('div');
 
 d.className=
 'cat-item'+
 (c===state.currentCat?' active':'');
 
-
 d.innerHTML=`
-
-<span class="cat-icon">
-${icon(c)}
-</span>
-
-<span class="cat-name">
-${escapeHtml(c)}
-</span>
-
-<span class="cat-count">
-${count}
-</span>
-
+<span class="cat-icon">${icon(c)}</span>
+<span class="cat-name">${escapeHtml(c)}</span>
+<span class="cat-count">${count}</span>
 ${
 c!=='全部'&&c!=='未分类'
-?
-'<button class="cat-del-btn" title="删除分类">−</button>'
+?'<button class="cat-del-btn" title="删除分类">−</button>'
 :''
 }
-
 `;
 
-
-d.addEventListener(
-'click',
-e=>{
-
-if(
-!e.target.closest('.cat-del-btn')
-){
-
+d.addEventListener('click',e=>{
+if(!e.target.closest('.cat-del-btn')){
 switchCat(c);
-
 }
-
 });
 
-
-d.querySelector(
-'.cat-del-btn'
-)?.addEventListener(
-'click',
-e=>{
-
+d.querySelector('.cat-del-btn')
+?.addEventListener('click',e=>{
 e.stopPropagation();
-
 deleteCat(c);
-
 });
-
 
 list.appendChild(d);
-
 });
-
 }
 
-
 function switchCat(c){
-
 state.currentCat=c;
+state.selectedIds.clear();
 
-document.getElementById(
-'pageTitle'
-).textContent=
+document.getElementById('pageTitle').textContent=
 c==='全部'
 ?'全部视频'
 :c;
 
 renderCats();
 renderVideos();
+updateBatchBar();
 closeSidebar();
-
 }
 
-
-function renderVideos(){
-
-const box=
-document.getElementById('content');
-
-
-const vs=
-state.currentCat==='全部'
+function getCurrentVideos(){
+return state.currentCat==='全部'
 ?state.data.videos
 :state.data.videos.filter(
 v=>(v.category||'未分类')===state.currentCat
 );
-
-
-if(!vs.length){
-
-box.innerHTML=`
-
-<div class="empty-state">
-
-<div class="empty-icon">🎬</div>
-
-<h3>暂无视频</h3>
-
-<p>
-点击右上角「上传视频」添加 MP4 视频
-</p>
-
-</div>
-
-`;
-
-return;
-
 }
 
+function renderVideos(){
+const box=document.getElementById('content');
+
+if(!box)return;
+
+const vs=getCurrentVideos();
+
+if(!vs.length){
+box.innerHTML=`
+<div class="empty-state">
+<div class="empty-icon">🎬</div>
+<h3>暂无视频</h3>
+<p>点击右上角「上传视频」添加视频</p>
+</div>
+`;
+
+updateBatchBar();
+return;
+}
 
 const grid=document.createElement('div');
 
 grid.className='video-grid';
 
-
 vs.slice().reverse().forEach(v=>{
-
-const card=
-document.createElement('div');
+const card=document.createElement('div');
 
 card.className='video-card';
 
-
 const src=videoUrl(v);
-
 const thumb=v.thumbnail||'';
 
+const checked=
+state.selectedIds.has(v.id);
 
 card.innerHTML=`
-
 <div class="video-thumb">
 
 ${
 thumb
-?
-`<img src="${thumb}" alt="视频缩略图">`
+?`<img src="${thumb}" alt="视频缩略图">`
 :
 (
 src
-?
-'<video muted playsinline preload="metadata"></video>'
-:
-'<div class="thumb-placeholder">🎬</div>'
+?'<video muted playsinline preload="metadata"></video>'
+:'<div class="thumb-placeholder">🎬</div>'
 )
 }
 
@@ -743,12 +477,34 @@ src
 <button
 class="delete-btn"
 title="删除视频"
+>×</button>
+
+<label
+class="video-select"
+title="选择视频"
+style="
+position:absolute;
+top:8px;
+left:8px;
+z-index:4;
+width:30px;
+height:30px;
+border-radius:8px;
+background:rgba(0,0,0,.65);
+display:flex;
+align-items:center;
+justify-content:center;
+cursor:pointer;
+"
 >
-×
-</button>
+<input
+type="checkbox"
+${checked?'checked':''}
+style="width:18px;height:18px;cursor:pointer"
+>
+</label>
 
 </div>
-
 
 <div class="video-info">
 
@@ -759,349 +515,593 @@ title="${escapeHtml(v.name)}"
 ${escapeHtml(v.name)}
 </div>
 
-
 <div class="v-meta">
-
-<span>
-${formatSize(v.size)}
-</span>
-
-<span>
-${formatDate(v.createdAt)}
-</span>
-
+<span>${formatSize(v.size)}</span>
+<span>${formatDate(v.createdAt)}</span>
 </div>
-
 
 <span class="v-cat">
 ${escapeHtml(v.category||'未分类')}
 </span>
 
 </div>
-
 `;
 
-
 const vid=
-card.querySelector(
-'.video-thumb video'
-);
-
+card.querySelector('.video-thumb video');
 
 if(vid&&src){
-
 vid.src=src;
 
 vid.addEventListener(
 'loadedmetadata',
 ()=>{
-
 try{
-
 vid.currentTime=
 Math.min(
 .1,
 vid.duration||0
 );
-
 }catch{}
-
-});
-
+}
+);
 }
 
+const checkbox=
+card.querySelector(
+'.video-select input'
+);
+
+checkbox.addEventListener(
+'click',
+e=>{
+e.stopPropagation();
+}
+);
+
+checkbox.addEventListener(
+'change',
+e=>{
+e.stopPropagation();
+
+if(e.target.checked){
+state.selectedIds.add(v.id);
+}else{
+state.selectedIds.delete(v.id);
+}
+
+updateBatchBar();
+renderVideos();
+}
+);
 
 card.addEventListener(
 'click',
-()=>playVideo(v)
-);
+e=>{
+if(
+e.target.closest('.delete-btn')||
+e.target.closest('.video-select')
+){
+return;
+}
 
+playVideo(v);
+}
+);
 
 card.querySelector(
 '.delete-btn'
 ).addEventListener(
 'click',
 e=>{
-
 e.stopPropagation();
-
 deleteVideo(v.id);
-
-});
-
+}
+);
 
 grid.appendChild(card);
-
 });
-
 
 box.replaceChildren(grid);
 
+updateBatchBar();
 }
 
-
 function playVideo(v){
-
 const src=videoUrl(v);
 
 if(!src){
-
-toast(
+return toast(
 '视频文件数据不存在',
 'error'
 );
-
-return;
-
 }
 
-
 const video=
-document.getElementById(
-'playerVideo'
-);
-
+document.getElementById('playerVideo');
 
 state.currentPlayerId=v.id;
 
-
 video.onerror=()=>{
-
 toast(
 '这个 MP4 无法由当前浏览器解码。文件本身未被修改。',
 'error'
 );
-
 };
-
 
 video.src=src;
 video.load();
 
-
 document.getElementById(
 'playerTitle'
 ).textContent=v.name;
-
 
 document.getElementById(
 'playerMeta'
 ).textContent=
 `${v.category||'未分类'} · ${formatSize(v.size)} · ${new Date(v.createdAt).toLocaleString()}`;
 
-
 openModal('playerModal');
 
-
-video.play().catch(
-()=>{}
-);
-
+video.play().catch(()=>{});
 }
 
-
 function downloadVideo(v){
-
 const b=asBlob(v);
 
 if(!b){
-
-toast(
+return toast(
 '找不到原视频文件',
 'error'
 );
-
-return;
-
 }
 
+const u=URL.createObjectURL(b);
 
-const u=
-URL.createObjectURL(b);
-
-const a=
-document.createElement('a');
+const a=document.createElement('a');
 
 a.href=u;
-
-a.download=
-v.name||'video.mp4';
+a.download=v.name||'video.mp4';
 
 document.body.appendChild(a);
-
 a.click();
-
 a.remove();
 
-
-setTimeout(
-()=>{
+setTimeout(()=>{
 URL.revokeObjectURL(u);
-},
-1500
-);
-
+},1500);
 }
 
+async function downloadSelectedVideos(){
+const ids=[...state.selectedIds];
 
-async function deleteVideo(id){
+if(!ids.length){
+return toast(
+'请先选择视频',
+'error'
+);
+}
 
-if(
-!confirm('确定删除这个视频？')
-)return;
-
-
-const old=
-state.data.videos;
-
-
-state.data.videos=
-old.filter(
-v=>v.id!==id
+const videos=
+state.data.videos.filter(
+v=>ids.includes(v.id)
 );
 
+if(videos.length===1){
+downloadVideo(videos[0]);
+return;
+}
 
-if(
-await saveVideos()
-){
+let success=0;
+
+for(const v of videos){
+const b=asBlob(v);
+
+if(!b)continue;
+
+const u=URL.createObjectURL(b);
+
+const a=document.createElement('a');
+
+a.href=u;
+a.download=v.name||'video.mp4';
+
+document.body.appendChild(a);
+a.click();
+a.remove();
+
+success++;
+
+await new Promise(
+resolve=>setTimeout(resolve,180)
+);
+
+setTimeout(()=>{
+URL.revokeObjectURL(u);
+},1500);
+}
+
+toast(
+`已开始下载 ${success} 个视频`
+);
+
+state.selectedIds.clear();
+renderVideos();
+updateBatchBar();
+}
+
+async function deleteVideo(id){
+if(!confirm('确定删除这个视频？'))return;
+
+const old=state.data.videos;
+
+state.data.videos=
+old.filter(v=>v.id!==id);
+
+if(await saveVideos()){
 
 revoke(id);
 
+state.selectedIds.delete(id);
+
 renderCats();
 renderVideos();
+updateBatchBar();
 
 toast('视频已删除');
 
 }else{
 
 state.data.videos=old;
-
+}
 }
 
+async function deleteSelectedVideos(){
+const ids=[...state.selectedIds];
+
+if(!ids.length){
+return toast(
+'请先选择视频',
+'error'
+);
 }
 
+const count=ids.length;
 
-function openUpload(){
+if(
+!confirm(
+`确定删除选中的 ${count} 个视频？`
+)
+){
+return;
+}
 
-const s=
-document.getElementById(
-'uploadCat'
+const oldVideos=state.data.videos;
+
+state.data.videos=
+oldVideos.filter(
+v=>!state.selectedIds.has(v.id)
 );
 
+if(await saveVideos()){
+
+ids.forEach(id=>revoke(id));
+
+state.selectedIds.clear();
+
+renderCats();
+renderVideos();
+updateBatchBar();
+
+toast(
+`已删除 ${count} 个视频`
+);
+
+}else{
+
+state.data.videos=oldVideos;
+}
+}
+
+function selectAllCurrent(){
+const videos=getCurrentVideos();
+
+if(!videos.length)return;
+
+const allSelected=
+videos.every(
+v=>state.selectedIds.has(v.id)
+);
+
+if(allSelected){
+
+videos.forEach(
+v=>state.selectedIds.delete(v.id)
+);
+
+}else{
+
+videos.forEach(
+v=>state.selectedIds.add(v.id)
+);
+}
+
+renderVideos();
+updateBatchBar();
+}
+
+function clearSelection(){
+state.selectedIds.clear();
+
+renderVideos();
+updateBatchBar();
+}
+
+function updateBatchBar(){
+let bar=document.getElementById(
+'batchActionBar'
+);
+
+const selectedCount=
+state.selectedIds.size;
+
+const currentVideos=
+getCurrentVideos();
+
+if(!bar){
+
+bar=document.createElement('div');
+
+bar.id='batchActionBar';
+
+bar.style.cssText=`
+position:fixed;
+left:50%;
+bottom:22px;
+transform:translateX(-50%);
+z-index:90;
+display:none;
+align-items:center;
+gap:8px;
+padding:10px 12px;
+background:#242424;
+border:1px solid #444;
+border-radius:12px;
+box-shadow:0 8px 30px rgba(0,0,0,.45);
+max-width:calc(100vw - 24px);
+`;
+
+bar.innerHTML=`
+<span
+id="batchCount"
+style="
+font-size:13px;
+color:#e0e0e0;
+white-space:nowrap;
+margin-right:4px;
+"
+></span>
+
+<button
+id="batchSelectAll"
+class="btn btn-secondary"
+style="padding:7px 10px;font-size:12px"
+>
+全选
+</button>
+
+<button
+id="batchDownload"
+class="btn btn-primary"
+style="padding:7px 10px;font-size:12px"
+>
+⬇ 下载
+</button>
+
+<button
+id="batchDelete"
+class="btn btn-secondary"
+style="
+padding:7px 10px;
+font-size:12px;
+color:#ff6b6b;
+"
+>
+删除
+</button>
+
+<button
+id="batchClear"
+class="btn btn-secondary"
+style="padding:7px 10px;font-size:12px"
+>
+取消
+</button>
+`;
+
+document.body.appendChild(bar);
+
+document.getElementById(
+'batchSelectAll'
+).addEventListener(
+'click',
+selectAllCurrent
+);
+
+document.getElementById(
+'batchDownload'
+).addEventListener(
+'click',
+downloadSelectedVideos
+);
+
+document.getElementById(
+'batchDelete'
+).addEventListener(
+'click',
+deleteSelectedVideos
+);
+
+document.getElementById(
+'batchClear'
+).addEventListener(
+'click',
+clearSelection
+);
+}
+
+if(!selectedCount){
+
+bar.style.display='none';
+return;
+}
+
+bar.style.display='flex';
+
+document.getElementById(
+'batchCount'
+).textContent=
+`已选 ${selectedCount} 个`;
+
+const allSelected=
+currentVideos.length>0&&
+currentVideos.every(
+v=>state.selectedIds.has(v.id)
+);
+
+document.getElementById(
+'batchSelectAll'
+).textContent=
+allSelected
+?'取消全选'
+:'全选';
+}
+
+function openUpload(){
+const s=document.getElementById(
+'uploadCat'
+);
 
 s.innerHTML=
 state.cats
 .filter(c=>c!=='全部')
-.map(
-c=>`
+.map(c=>`
 <option value="${escapeHtml(c)}">
 ${escapeHtml(c)}
 </option>
-`
-)
+`)
 .join('');
 
+state.selectedFiles=[];
 
-state.selectedFile=null;
+const fileInput=
+document.getElementById('fileInput');
 
+if(fileInput){
+fileInput.multiple=true;
+}
 
 document.getElementById(
 'fileName'
 ).textContent='';
 
-
+const btn=
 document.getElementById(
 'uploadConfirmBtn'
-).disabled=true;
+);
 
+btn.disabled=true;
+btn.textContent='上传';
 
 openModal('uploadModal');
-
 }
 
+function handleFiles(fileList){
+if(!fileList||!fileList.length)return;
 
-function isMp4File(file){
+const files=[...fileList];
 
-if(!file)return false;
+const valid=[];
 
-
-const name=
-String(file.name||'')
-.toLowerCase();
-
-
-const type=
-String(file.type||'')
-.toLowerCase();
-
-
-return (
-name.endsWith('.mp4') &&
-(
-!type||
-type==='video/mp4'
-)
-);
-
-}
-
-
-function handleFile(file){
-
-if(!file)return;
-
-
-if(!isMp4File(file)){
-
-return toast(
-'只支持 .mp4 视频文件',
-'error'
-);
-
-}
-
+for(const file of files){
 
 if(
-file.size>CONFIG.MAX_FILE_SIZE
+!file.type.startsWith('video/')&&
+!/\.mp4$/i.test(file.name)
 ){
-
-return toast(
-'单个 MP4 超过 2GB，暂不建议导入',
+toast(
+`${file.name} 不是有效的视频文件`,
 'error'
 );
-
+continue;
 }
 
+if(file.size>CONFIG.MAX_FILE_SIZE){
+toast(
+`${file.name} 超过 2GB，暂不建议导入`,
+'error'
+);
+continue;
+}
 
-state.selectedFile=file;
+valid.push(file);
+}
 
+if(!valid.length)return;
 
-document.getElementById(
-'fileName'
-).textContent=
-`${file.name} · ${formatSize(file.size)}`;
+state.selectedFiles=valid;
 
+const totalSize=
+valid.reduce(
+(sum,f)=>sum+f.size,
+0
+);
 
+const nameEl=
+document.getElementById('fileName');
+
+if(nameEl){
+
+if(valid.length===1){
+
+nameEl.textContent=
+`${valid[0].name} · ${formatSize(valid[0].size)}`;
+
+}else{
+
+nameEl.textContent=
+`已选择 ${valid.length} 个视频 · 总计 ${formatSize(totalSize)}`;
+}
+}
+
+const btn=
 document.getElementById(
 'uploadConfirmBtn'
-).disabled=false;
+);
 
+btn.disabled=false;
+
+btn.textContent=
+valid.length>1
+?`上传 ${valid.length} 个视频`
+:'上传';
 }
 
+function handleFile(file){
+if(!file)return;
+
+handleFiles([file]);
+}
 
 async function checkSpace(n){
-
 try{
-
 const e=
 await navigator.storage?.estimate?.();
-
 
 if(e?.quota){
 
 const available=
 e.quota-(e.usage||0);
-
 
 if(
 n+CONFIG.STORAGE_RESERVE>
@@ -1114,42 +1114,29 @@ toast(
 );
 
 return false;
-
 }
-
 }
-
 }catch{}
 
-
 return true;
-
 }
 
-
 function createThumbnail(file){
-
-return new Promise(
-resolve=>{
+return new Promise(resolve=>{
 
 const u=
 URL.createObjectURL(file);
 
-
 const v=
 document.createElement('video');
-
 
 v.muted=true;
 v.playsInline=true;
 v.preload='metadata';
 
-
 let done=false;
 
-
 const finish=x=>{
-
 if(done)return;
 
 done=true;
@@ -1157,12 +1144,9 @@ done=true;
 URL.revokeObjectURL(u);
 
 resolve(x||'');
-
 };
 
-
 v.onloadeddata=()=>{
-
 try{
 
 v.currentTime=
@@ -1175,24 +1159,19 @@ Math.max(
 );
 
 }catch{}
-
 };
 
-
 v.onseeked=()=>{
-
 try{
 
 const c=
 document.createElement('canvas');
-
 
 const w=
 Math.min(
 640,
 v.videoWidth||640
 );
-
 
 const h=
 Math.max(
@@ -1204,20 +1183,19 @@ w*
 )
 );
 
-
 c.width=w;
 c.height=h;
 
+const ctx=
+c.getContext('2d');
 
-c.getContext('2d')
-.drawImage(
+ctx.drawImage(
 v,
 0,
 0,
 w,
 h
 );
-
 
 finish(
 c.toDataURL(
@@ -1227,155 +1205,136 @@ c.toDataURL(
 );
 
 }catch{
-
 finish('');
-
 }
-
 };
-
 
 v.onerror=()=>{
 finish('');
 };
 
-
 v.src=u;
 
-
-setTimeout(
-()=>{
+setTimeout(()=>{
 finish('');
-},
-5000
-);
+},5000);
 
 });
 }
 
-
 async function doUpload(){
+const files=[...state.selectedFiles];
 
-const file=
-state.selectedFile;
-
-
-if(!file)return;
-
+if(!files.length)return;
 
 const btn=
 document.getElementById(
 'uploadConfirmBtn'
 );
 
-
 btn.disabled=true;
-
-btn.textContent=
-'检查空间…';
-
 
 try{
 
-if(
-!(await checkSpace(file.size))
-){
+let totalSize=
+files.reduce(
+(sum,f)=>sum+f.size,
+0
+);
 
+btn.textContent='检查空间…';
+
+if(!(await checkSpace(totalSize))){
 btn.disabled=false;
-
 return;
-
 }
 
+const selectedCategory=
+document.getElementById(
+'uploadCat'
+).value||'未分类';
+
+const newVideos=[];
+
+for(let i=0;i<files.length;i++){
+
+const file=files[i];
 
 btn.textContent=
-'生成缩略图…';
-
+files.length>1
+?`生成缩略图 ${i+1}/${files.length}…`
+:'生成缩略图…';
 
 const thumbnail=
 await createThumbnail(file);
 
-
 btn.textContent=
-'保存原文件…';
-
+files.length>1
+?`保存 ${i+1}/${files.length}…`
+:'保存原文件…';
 
 const blob=
 file.slice(
 0,
 file.size,
-CONFIG.VIDEO_TYPE
+file.type||'video/mp4'
 );
 
-
 const v={
-
 id:
 Date.now().toString(36)+
-Math.random().toString(36).slice(2,8),
+Math.random().toString(36).slice(2,10),
 
 name:file.name,
 
-category:
-document.getElementById(
-'uploadCat'
-).value||
-'未分类',
+category:selectedCategory,
 
 blob,
 
 size:file.size,
 
-type:CONFIG.VIDEO_TYPE,
+type:file.type||'video/mp4',
 
-createdAt:Date.now(),
+createdAt:Date.now()+i,
 
 thumbnail
-
 };
 
+newVideos.push(v);
+}
 
 const data={
-
 videos:[
 ...state.data.videos,
-v
+...newVideos
 ]
-
 };
-
 
 await IDB.set(
 CONFIG.DB_KEY,
 data
 );
 
-
 state.data=data;
 
+state.selectedFiles=[];
 
 renderCats();
 renderVideos();
 updateStorage();
+updateBatchBar();
 
-
-closeModal(
-'uploadModal'
-);
-
-
-state.selectedFile=null;
-
+closeModal('uploadModal');
 
 toast(
-'上传成功，原 MP4 已保存'
+files.length>1
+?`成功上传 ${files.length} 个视频，原 MP4 已保存`
+:'上传成功，原 MP4 已保存'
 );
-
 
 }catch(e){
 
 console.error(e);
-
 
 toast(
 '保存失败：'+
@@ -1387,129 +1346,86 @@ e.name==='QuotaExceededError'
 'error'
 );
 
-
 }finally{
 
 btn.textContent='上传';
 
 btn.disabled=
-!state.selectedFile;
-
+state.selectedFiles.length===0;
 }
-
 }
-
 
 function dataURLToBlob(s){
+const [head,body]=s.split(',',2);
 
-const [
-head,
-body
-]=s.split(',',2);
-
-
-if(!body)
+if(!body){
 throw new Error(
 '备份数据损坏'
 );
-
+}
 
 const mime=
-(
-head.match(
-/data:([^;]+)/
-)||[]
-)[1]||
+(head.match(/data:([^;]+)/)||[])[1]||
 'application/octet-stream';
 
-
-const bin=
-atob(body);
-
+const bin=atob(body);
 
 const a=
 new Uint8Array(
 bin.length
 );
 
-
 for(
 let i=0;
 i<bin.length;
 i++
 ){
-
-a[i]=
-bin.charCodeAt(i);
-
+a[i]=bin.charCodeAt(i);
 }
-
 
 return new Blob(
 [a],
-{
-type:mime
-}
+{type:mime}
 );
-
 }
-
 
 function blobToDataURL(b){
-
 return new Promise(
 (res,rej)=>{
-
-const r=
-new FileReader();
-
+const r=new FileReader();
 
 r.onload=()=>{
 res(r.result);
 };
 
-
 r.onerror=()=>{
 rej(r.error);
 };
 
-
 r.readAsDataURL(b);
-
-});
+}
+);
 }
 
-
 async function exportBackup(){
-
-if(
-!state.data.videos.length
-){
-
+if(!state.data.videos.length){
 return toast(
 '暂无视频可备份',
 'error'
 );
-
 }
-
 
 const btn=
 document.getElementById(
 'exportBtn'
 );
 
-
 btn.disabled=true;
-
-btn.textContent=
-'⏳ 生成中…';
-
+btn.textContent='⏳ 生成中…';
 
 try{
 
 const videos=[];
-
 
 for(
 const v of state.data.videos
@@ -1519,13 +1435,9 @@ const b=asBlob(v);
 
 if(!b)continue;
 
-
 videos.push({
-
 id:v.id,
-
 name:v.name,
-
 category:v.category,
 
 data:
@@ -1533,54 +1445,40 @@ await blobToDataURL(b),
 
 size:b.size,
 
-type:CONFIG.VIDEO_TYPE,
+type:
+v.type||
+b.type,
 
 createdAt:v.createdAt,
 
-thumbnail:v.thumbnail||''
-
+thumbnail:
+v.thumbnail||''
 });
-
 }
 
-
 const payload={
-
-version:4,
-
+version:3,
 exportedAt:Date.now(),
-
 categories:state.cats,
-
 videos
-
 };
-
 
 const blob=
 new Blob(
-[
-JSON.stringify(payload)
-],
-{
-type:'application/json'
-}
+[JSON.stringify(payload)],
+{type:'application/json'}
 );
-
 
 const u=
 URL.createObjectURL(blob);
 
-
 const a=
 document.createElement('a');
-
 
 a.href=u;
 
 a.download=
 `video-backup-${new Date().toISOString().slice(0,10)}.json`;
-
 
 document.body.appendChild(a);
 
@@ -1588,17 +1486,11 @@ a.click();
 
 a.remove();
 
-
-setTimeout(
-()=>{
+setTimeout(()=>{
 URL.revokeObjectURL(u);
-},
-1000
-);
-
+},1000);
 
 toast('备份已导出');
-
 
 }catch(e){
 
@@ -1610,91 +1502,62 @@ toast(
 }finally{
 
 btn.disabled=false;
-
-btn.textContent=
-'📥 导出备份';
-
+btn.textContent='📥 导出备份';
 }
-
 }
-
 
 function openImport(){
-
 state.importData=null;
-
 
 document.getElementById(
 'importFileName'
 ).textContent='';
 
-
 document.getElementById(
 'importConfirmBtn'
 ).disabled=true;
 
-
-openModal(
-'importModal'
-);
-
+openModal('importModal');
 }
 
-
 function handleImport(file){
-
 if(!file)return;
 
-
-if(
-!/\.json$/i.test(file.name)
-){
-
+if(!/\.json$/i.test(file.name)){
 return toast(
 '请选择 JSON 备份文件',
 'error'
 );
-
 }
-
 
 const r=
 new FileReader();
 
-
 r.onload=()=>{
-
 try{
 
 const o=
 JSON.parse(r.result);
 
-
 if(
 !Array.isArray(o.videos)||
 !Array.isArray(o.categories)
 ){
-
 throw new Error(
 '备份格式不正确'
 );
-
 }
 
-
 state.importData=o;
-
 
 document.getElementById(
 'importFileName'
 ).textContent=
 `${file.name} · ${o.videos.length} 个视频`;
 
-
 document.getElementById(
 'importConfirmBtn'
 ).disabled=false;
-
 
 }catch(e){
 
@@ -1702,11 +1565,8 @@ toast(
 '无效的备份文件：'+e.message,
 'error'
 );
-
 }
-
 };
-
 
 r.onerror=()=>{
 toast(
@@ -1715,53 +1575,52 @@ toast(
 );
 };
 
-
 r.readAsText(file);
-
 }
 
-
 async function doImport(){
-
-const o=
-state.importData;
-
+const o=state.importData;
 
 if(!o)return;
-
 
 if(
 !confirm(
 `确定恢复备份？这将覆盖当前所有数据（${o.videos.length} 个视频）。`
 )
-)return;
-
+){
+return;
+}
 
 const btn=
 document.getElementById(
 'importConfirmBtn'
 );
 
-
 btn.disabled=true;
-
-btn.textContent=
-'恢复中…';
-
+btn.textContent='恢复中…';
 
 try{
 
-const videos=
-o.videos.map(v=>{
+const videos=[];
+
+for(
+let i=0;
+i<o.videos.length;
+i++
+){
+
+const v=o.videos[i];
+
+btn.textContent=
+o.videos.length>1
+?`恢复 ${i+1}/${o.videos.length}…`
+:'恢复中…';
 
 const b=
 dataURLToBlob(v.data);
 
-
-return{
-
+videos.push({
 id:v.id,
-
 name:v.name,
 
 category:
@@ -1773,7 +1632,10 @@ blob:b,
 
 size:b.size,
 
-type:CONFIG.VIDEO_TYPE,
+type:
+v.type||
+b.type||
+'video/mp4',
 
 createdAt:
 Number(v.createdAt)||
@@ -1781,11 +1643,8 @@ Date.now(),
 
 thumbnail:
 v.thumbnail||''
-
-};
-
 });
-
+}
 
 const cats=[
 ...new Set(
@@ -1797,81 +1656,51 @@ c.trim()
 )
 ];
 
-
-if(
-!cats.includes('全部')
-){
-
+if(!cats.includes('全部')){
 cats.unshift('全部');
-
 }
 
-
-if(
-!cats.includes('未分类')
-){
-
+if(!cats.includes('未分类')){
 cats.splice(
 1,
 0,
 '未分类'
 );
-
 }
-
 
 await IDB.set(
 CONFIG.DB_KEY,
-{
-videos
-}
+{videos}
 );
-
 
 state.objectUrls.forEach(
-u=>{
-URL.revokeObjectURL(u);
-}
+u=>URL.revokeObjectURL(u)
 );
-
 
 state.objectUrls.clear();
 
-
-state.data={
-videos
-};
-
+state.data={videos};
 
 state.cats=cats;
 
-
 saveCats();
-
 
 state.currentCat='全部';
 
+state.selectedIds.clear();
 
 document.getElementById(
 'pageTitle'
-).textContent=
-'全部视频';
-
+).textContent='全部视频';
 
 renderCats();
 renderVideos();
 updateStorage();
+updateBatchBar();
 
+closeModal('importModal');
 
-closeModal(
-'importModal'
-);
-
-
-toast(
-'备份恢复成功'
-);
-
+toast('备份恢复成功');
 
 }catch(e){
 
@@ -1886,139 +1715,104 @@ btn.textContent='恢复';
 
 btn.disabled=
 !state.importData;
-
 }
-
 }
-
 
 function openAddCat(){
-
 document.getElementById(
 'newCatName'
 ).value='';
 
-
 openModal('catModal');
 
-
-setTimeout(
-()=>{
-document
-.getElementById('newCatName')
-.focus();
-},
-100
-);
-
+setTimeout(()=>{
+document.getElementById(
+'newCatName'
+)?.focus();
+},100);
 }
 
-
 function addCat(){
-
 const i=
 document.getElementById(
 'newCatName'
 );
 
-
 const n=
 i.value.trim();
 
-
-if(!n)
+if(!n){
 return toast(
 '请输入分类名称',
 'error'
 );
+}
 
-
-if(
-state.cats.includes(n)
-)
+if(state.cats.includes(n)){
 return toast(
 '分类已存在',
 'error'
 );
-
+}
 
 state.cats.push(n);
-
 
 if(saveCats()){
 
 renderCats();
 
-closeModal(
-'catModal'
-);
+closeModal('catModal');
 
-toast(
-'分类添加成功'
-);
-
+toast('分类添加成功');
 }
-
 }
-
 
 async function deleteCat(c){
-
 if(
 c==='全部'||
 c==='未分类'
-)return;
-
+){
+return;
+}
 
 const count=
 state.data.videos.filter(
 v=>v.category===c
 ).length;
 
-
 if(
 !confirm(
 count
-?
-`确定删除分类「${c}」？${count} 个视频将移至「未分类」。`
-:
-`确定删除空分类「${c}」？`
+?`确定删除分类「${c}」？${count} 个视频将移至「未分类」。`
+:`确定删除空分类「${c}」？`
 )
-)return;
+){
+return;
+}
 
-
-const cats=[
-...state.cats
-];
-
+const cats=[...state.cats];
 
 const videos=
 state.data.videos.map(
 v=>({...v})
 );
 
-
 state.cats=
 state.cats.filter(
 x=>x!==c
 );
 
-
-state.data.videos.forEach(
-v=>{
-
-if(v.category===c)
+state.data.videos.forEach(v=>{
+if(v.category===c){
 v.category='未分类';
-
 }
-);
-
+});
 
 if(
 state.currentCat===c
-)
+){
 state.currentCat='全部';
-
+}
 
 if(
 !(
@@ -2028,13 +1822,12 @@ await saveVideos()
 ){
 
 state.cats=cats;
-
 state.data.videos=videos;
 
 return;
-
 }
 
+state.selectedIds.clear();
 
 document.getElementById(
 'pageTitle'
@@ -2043,28 +1836,20 @@ state.currentCat==='全部'
 ?'全部视频'
 :state.currentCat;
 
-
 renderCats();
 renderVideos();
+updateBatchBar();
 
-
-toast(
-'分类已删除'
-);
-
+toast('分类已删除');
 }
 
-
 function openCatManage(){
-
 const b=
 document.getElementById(
 'catManageBody'
 );
 
-
 b.innerHTML='';
-
 
 const cats=
 state.cats.filter(
@@ -2073,109 +1858,81 @@ c!=='全部'&&
 c!=='未分类'
 );
 
-
 if(!cats.length){
 
 b.innerHTML=
 '<div class="manage-empty">暂无可管理的自定义分类</div>';
 
-return openModal(
-'catManageModal'
-);
+openModal('catManageModal');
 
+return;
 }
-
 
 cats.forEach(c=>{
 
 const item=
 document.createElement('div');
 
-
 item.className=
 'cat-manage-item';
 
-
 item.innerHTML=`
-
 <div class="cat-left">
-
 <span>${icon(c)}</span>
-
 <input
 value="${escapeHtml(c)}"
 maxlength="30"
 >
-
 </div>
 
 <div class="cat-actions">
-
-<button title="删除">
-🗑
-</button>
-
+<button title="删除">🗑</button>
 </div>
-
 `;
-
 
 const input=
 item.querySelector('input');
 
-
 input.addEventListener(
 'change',
-()=>renameCat(
+()=>{
+renameCat(
 c,
 input.value.trim(),
 input
-)
 );
-
+}
+);
 
 item.querySelector(
 'button'
 ).addEventListener(
 'click',
-()=>deleteCat(c)
+()=>{
+deleteCat(c);
+}
 );
-
 
 b.appendChild(item);
-
 });
 
-
-openModal(
-'catManageModal'
-);
-
+openModal('catManageModal');
 }
-
 
 async function renameCat(
 oldName,
 newName,
 input
 ){
-
 if(
 !newName||
 newName===oldName
 ){
-
 input.value=oldName;
-
 return;
-
 }
 
-
-if(
-state.cats.includes(newName)
-){
-
+if(state.cats.includes(newName)){
 toast(
 '分类名称已存在',
 'error'
@@ -2184,42 +1941,29 @@ toast(
 input.value=oldName;
 
 return;
-
 }
 
-
 const idx=
-state.cats.indexOf(
-oldName
-);
-
+state.cats.indexOf(oldName);
 
 const oldVideos=
 state.data.videos.map(
 v=>({...v})
 );
 
-
 state.cats[idx]=newName;
 
-
-state.data.videos.forEach(
-v=>{
-
-if(
-v.category===oldName
-)
+state.data.videos.forEach(v=>{
+if(v.category===oldName){
 v.category=newName;
-
 }
-);
-
+});
 
 if(
 state.currentCat===oldName
-)
+){
 state.currentCat=newName;
-
+}
 
 if(
 !(
@@ -2236,9 +1980,7 @@ oldVideos;
 input.value=oldName;
 
 return;
-
 }
-
 
 document.getElementById(
 'pageTitle'
@@ -2247,35 +1989,81 @@ state.currentCat==='全部'
 ?'全部视频'
 :state.currentCat;
 
-
 renderCats();
 renderVideos();
-
+updateBatchBar();
 
 openCatManage();
 
-
-toast(
-'重命名成功'
-);
-
+toast('重命名成功');
 }
 
+function injectMultiUploadStyle(){
+if(document.getElementById(
+'multiUploadStyle'
+))return;
 
-function bind(){
+const style=
+document.createElement('style');
 
-const on=(
-id,
-e,
-fn
-)=>
-document
-.getElementById(id)
-?.addEventListener(
-e,
-fn
+style.id='multiUploadStyle';
+
+style.textContent=`
+#fileName{
+white-space:pre-line;
+}
+
+#batchActionBar button{
+white-space:nowrap;
+}
+
+@media(max-width:560px){
+
+#batchActionBar{
+bottom:12px!important;
+padding:8px!important;
+gap:5px!important;
+}
+
+#batchActionBar button{
+padding:7px 8px!important;
+font-size:11px!important;
+}
+
+#batchCount{
+font-size:11px!important;
+}
+
+.video-select{
+display:flex!important;
+}
+}
+`;
+
+document.head.appendChild(style);
+}
+
+function setupMultipleFileInput(){
+const input=
+document.getElementById(
+'fileInput'
 );
 
+if(!input)return;
+
+input.multiple=true;
+
+input.setAttribute(
+'accept',
+'video/mp4,video/*'
+);
+}
+
+function bind(){
+const on=(id,e,fn)=>{
+document.getElementById(id)
+?.addEventListener(e,fn);
+};
 
 on(
 'uploadBtnMain',
@@ -2283,13 +2071,11 @@ on(
 openUpload
 );
 
-
 on(
 'addCatBtn',
 'click',
 openAddCat
 );
-
 
 on(
 'addCatConfirmBtn',
@@ -2297,13 +2083,11 @@ on(
 addCat
 );
 
-
 on(
 'uploadConfirmBtn',
 'click',
 doUpload
 );
-
 
 on(
 'catManageBtn',
@@ -2311,13 +2095,11 @@ on(
 openCatManage
 );
 
-
 on(
 'exportBtn',
 'click',
 exportBackup
 );
-
 
 on(
 'importBtn',
@@ -2325,13 +2107,11 @@ on(
 openImport
 );
 
-
 on(
 'menuBtn',
 'click',
 toggleSidebar
 );
-
 
 on(
 'sidebarOverlay',
@@ -2339,195 +2119,168 @@ on(
 closeSidebar
 );
 
-
 on(
 'importConfirmBtn',
 'click',
 doImport
 );
 
-
 on(
 'playerDownloadBtn',
 'click',
 ()=>{
-
 const v=
 state.data.videos.find(
-x=>x.id===
-state.currentPlayerId
+x=>x.id===state.currentPlayerId
 );
 
-if(v)
+if(v){
 downloadVideo(v);
-
+}
 }
 );
-
 
 on(
 'fileInput',
 'change',
 e=>{
-
-handleFile(
-e.target.files[0]
+handleFiles(
+e.target.files
 );
 
+e.target.value='';
 }
 );
-
 
 on(
 'importInput',
 'change',
 e=>{
-
 handleImport(
 e.target.files[0]
 );
 
+e.target.value='';
 }
 );
-
 
 document
 .querySelectorAll(
 '[data-close]'
 )
-.forEach(
-b=>{
-
+.forEach(b=>{
 b.addEventListener(
 'click',
-()=>closeModal(
+()=>{
+closeModal(
 b.dataset.close
-)
 );
-
 }
 );
-
+});
 
 document
 .querySelectorAll(
 '.modal-overlay'
 )
-.forEach(
-o=>{
-
+.forEach(o=>{
 o.addEventListener(
 'click',
 e=>{
-
-if(e.target===o)
+if(e.target===o){
 closeModal(o.id);
-
+}
 }
 );
-
-}
-);
-
+});
 
 const drop=(
 id,
 input,
 handler
 )=>{
-
 const d=
 document.getElementById(id);
 
+if(!d)return;
 
-d?.addEventListener(
+d.addEventListener(
 'click',
 ()=>{
-
-document
-.getElementById(input)
-?.click();
-
+document.getElementById(
+input
+)?.click();
 }
 );
 
-
-d?.addEventListener(
+d.addEventListener(
 'dragover',
 e=>{
-
 e.preventDefault();
-
 d.classList.add(
 'dragover'
 );
-
 }
 );
 
-
-d?.addEventListener(
+d.addEventListener(
 'dragleave',
 ()=>{
-
 d.classList.remove(
 'dragover'
 );
-
 }
 );
 
-
-d?.addEventListener(
+d.addEventListener(
 'drop',
 e=>{
-
 e.preventDefault();
 
 d.classList.remove(
 'dragover'
 );
 
+if(
+e.dataTransfer?.files?.length
+){
 handler(
-e.dataTransfer.files[0]
+e.dataTransfer.files
 );
-
+}
 }
 );
-
 };
-
 
 drop(
 'fileDrop',
 'fileInput',
-handleFile
+handleFiles
 );
-
 
 drop(
 'importDrop',
 'importInput',
-handleImport
+files=>{
+handleImport(
+files[0]
 );
-
+}
+);
 
 on(
 'newCatName',
 'keydown',
 e=>{
-
-if(e.key==='Enter')
+if(e.key==='Enter'){
 addCat();
-
+}
 }
 );
-
 
 document.addEventListener(
 'keydown',
 e=>{
-
 if(e.key==='Escape'){
 
 [
@@ -2536,39 +2289,222 @@ if(e.key==='Escape'){
 'catModal',
 'importModal',
 'catManageModal'
-]
-.forEach(closeModal);
+].forEach(closeModal);
 
 closeSidebar();
-
 }
-
 }
 );
-
 
 window.addEventListener(
 'beforeunload',
 ()=>{
-
 state.objectUrls.forEach(
-u=>{
-URL.revokeObjectURL(u);
+u=>URL.revokeObjectURL(u)
+);
 }
 );
-
 }
+
+function prepareUploadModal(){
+const fileInput=
+document.getElementById(
+'fileInput'
 );
 
+if(fileInput){
+
+fileInput.multiple=true;
+
+fileInput.setAttribute(
+'accept',
+'video/mp4,video/*'
+);
 }
 
+const drop=
+document.getElementById(
+'fileDrop'
+);
+
+if(drop){
+
+const hint=
+drop.querySelector(
+'.drop-hint'
+);
+
+if(hint){
+hint.textContent=
+'可一次选择多个 MP4，原始文件直接保存，不转码、不压缩';
+}
+}
+}
+
+function createBatchSelectionHelp(){
+const content=
+document.getElementById(
+'content'
+);
+
+if(!content)return;
+
+/*
+不额外改变原页面结构。
+批量操作栏只在用户勾选视频后出现。
+*/
+}
+
+function repairLegacyData(){
+if(!Array.isArray(
+state.data.videos
+)){
+state.data.videos=[];
+}
+
+state.data.videos=
+state.data.videos.filter(
+v=>v&&typeof v==='object'
+);
+
+state.data.videos.forEach(
+v=>{
+
+if(!v.id){
+v.id=
+Date.now().toString(36)+
+Math.random()
+.toString(36)
+.slice(2,8);
+}
+
+if(!v.name){
+v.name='未命名视频.mp4';
+}
+
+if(!v.category){
+v.category='未分类';
+}
+
+if(!v.type){
+v.type='video/mp4';
+}
+
+if(!v.createdAt){
+v.createdAt=Date.now();
+}
+
+if(!v.size){
+
+const b=asBlob(v);
+
+if(b){
+v.size=b.size;
+}
+}
+}
+);
+}
+
+function cleanupSelection(){
+const validIds=
+new Set(
+state.data.videos.map(
+v=>v.id
+)
+);
+
+state.selectedIds=
+new Set(
+[...state.selectedIds]
+.filter(
+id=>validIds.has(id)
+)
+);
+}
+
+function initBatchBar(){
+updateBatchBar();
+}
 
 document.addEventListener(
 'DOMContentLoaded',
-()=>{
-
+async()=>{
 bind();
-loadData();
 
+injectMultiUploadStyle();
+
+setupMultipleFileInput();
+
+prepareUploadModal();
+
+createBatchSelectionHelp();
+
+await loadData();
+
+repairLegacyData();
+
+cleanupSelection();
+
+renderCats();
+
+renderVideos();
+
+initBatchBar();
 }
 );
+
+/*
+====================================================
+本文件功能说明
+====================================================
+
+1. 单个视频上传
+2. 多个视频同时上传
+3. MP4 原文件 Blob 保存
+4. IndexedDB 本地存储
+5. 视频播放
+6. 单个视频下载
+7. 多选视频
+8. 批量下载
+9. 批量删除
+10. 当前分类全选 / 取消全选
+11. 分类添加
+12. 分类删除
+13. 分类重命名
+14. JSON 备份
+15. JSON 恢复
+16. 缩略图生成
+17. 存储空间估算
+18. 移动端侧边栏
+19. Toast 提示
+20. 旧 Base64 数据兼容
+====================================================
+
+多选上传：
+
+手机或电脑点击「上传视频」后，
+文件选择器现在允许一次选择多个视频。
+
+拖拽上传也支持多个文件。
+
+多选下载：
+
+在视频卡片左上角勾选视频，
+底部会自动出现批量操作栏：
+
+「全选」
+「⬇ 下载」
+「删除」
+「取消」
+
+选择多个视频后点击「⬇ 下载」，
+浏览器会依次触发下载。
+
+注意：
+浏览器本身可能会对连续下载进行拦截，
+如果浏览器提示“允许多个下载”，
+选择允许即可。
+
+====================================================
+*/
