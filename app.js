@@ -3802,3 +3802,308 @@ u=>URL.revokeObjectURL(u)
 }
 );
 }
+
+/* ==================================================
+   上传弹窗初始化
+   ================================================== */
+
+function prepareUploadModal(){
+
+const fileInput=
+document.getElementById(
+'fileInput'
+);
+
+if(fileInput){
+
+fileInput.multiple=true;
+
+fileInput.setAttribute(
+'accept',
+'video/mp4,video/*'
+);
+}
+
+const drop=
+document.getElementById(
+'fileDrop'
+);
+
+if(drop){
+
+const hint=
+drop.querySelector(
+'.drop-hint'
+);
+
+if(hint){
+
+hint.textContent=
+'可一次选择多个视频，原始文件直接保存，不转码、不压缩';
+}
+}
+
+injectDuplicateOption();
+}
+
+/* ==================================================
+   批量选择辅助
+   ================================================== */
+
+function createBatchSelectionHelp(){
+
+const content=
+document.getElementById(
+'content'
+);
+
+if(!content)return;
+
+/*
+不额外改变原页面结构。
+
+批量操作栏只在用户勾选视频后出现。
+*/
+}
+
+/* ==================================================
+   旧数据修复
+   ================================================== */
+
+function repairLegacyData(){
+
+if(!Array.isArray(
+state.data.videos
+)){
+
+state.data.videos=[];
+}
+
+state.data.videos=
+state.data.videos.filter(
+v=>
+v&&
+typeof v==='object'
+);
+
+state.data.videos.forEach(
+v=>{
+
+if(!v.id){
+
+v.id=
+Date.now().toString(36)+
+Math.random()
+.toString(36)
+.slice(2,8);
+}
+
+if(!v.name){
+
+v.name=
+'未命名视频.mp4';
+}
+
+if(!v.category){
+
+v.category=
+'未分类';
+}
+
+if(!v.type){
+
+v.type=
+'video/mp4';
+}
+
+if(!v.createdAt){
+
+v.createdAt=
+Date.now();
+}
+
+if(!v.size){
+
+const b=
+asBlob(v);
+
+if(b){
+v.size=b.size;
+}
+}
+}
+);
+}
+
+function cleanupSelection(){
+
+const validIds=
+new Set(
+state.data.videos.map(
+v=>v.id
+)
+);
+
+state.selectedIds=
+new Set(
+[...state.selectedIds]
+.filter(
+id=>
+validIds.has(id)
+)
+);
+}
+
+function initBatchBar(){
+
+updateBatchBar();
+}
+
+/* ==================================================
+   初始化
+   ================================================== */
+
+document.addEventListener(
+'DOMContentLoaded',
+async()=>{
+
+bind();
+
+injectMultiUploadStyle();
+
+setupMultipleFileInput();
+
+prepareUploadModal();
+
+createBatchSelectionHelp();
+
+await loadData();
+
+repairLegacyData();
+
+cleanupSelection();
+
+renderCats();
+
+renderVideos();
+
+initBatchBar();
+}
+);
+
+
+/*
+====================================================
+本文件功能说明
+====================================================
+
+1. 单个视频上传
+2. 多个视频同时上传
+3. MP4 原文件 Blob 保存
+4. IndexedDB 本地存储
+5. 视频播放
+6. 单个视频下载
+7. 多选视频
+8. 批量下载
+9. 批量删除
+10. 当前分类全选 / 取消全选
+11. 分类添加
+12. 分类删除
+13. 分类重命名
+14. JSON 备份
+15. JSON 恢复
+16. 缩略图生成
+17. 存储空间估算
+18. 移动端侧边栏
+19. Toast 提示
+20. 旧 Base64 数据兼容
+21. 多选上传
+22. 上传时自动过滤重复视频
+23. 可关闭「已上传的视频不显示」
+
+====================================================
+多选上传
+====================================================
+
+手机或电脑点击「上传视频」后，
+文件选择器允许一次选择多个视频。
+
+拖拽上传也支持多个文件。
+
+====================================================
+重复视频过滤
+====================================================
+
+上传窗口中默认开启：
+
+「已上传的视频不显示」
+
+程序会根据：
+
+文件名 + 文件大小
+
+判断当前选择的视频是否已经存在于视频库。
+
+如果已经存在，
+该视频不会进入上传队列。
+
+例如：
+
+视频库已有：
+
+example.mp4
+大小：120 MB
+
+再次选择：
+
+example.mp4
+大小：120 MB
+
+程序会自动过滤。
+
+如果关闭：
+
+「已上传的视频不显示」
+
+则允许再次上传同名同大小的视频。
+
+注意：
+
+这里使用「文件名 + 文件大小」作为快速判断条件。
+
+如果两个不同的视频恰好拥有完全相同的文件名和文件大小，
+开启过滤时也会被认为是重复视频。
+
+这样做的优点是：
+
+不需要读取整个视频计算 Hash，
+不会因为大视频产生额外的巨大内存和 CPU 开销，
+尤其适合手机端。
+
+====================================================
+多选下载
+====================================================
+
+在视频卡片左上角勾选视频，
+底部会自动出现批量操作栏：
+
+「全选」
+「⬇ 下载」
+「删除」
+「取消」
+
+选择多个视频后点击「⬇ 下载」，
+浏览器会依次触发下载。
+
+注意：
+
+浏览器本身可能会对连续下载进行拦截。
+
+如果浏览器提示：
+
+「允许多个下载」
+
+选择允许即可。
+
+====================================================
+*/
