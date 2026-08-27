@@ -22,9 +22,18 @@
 <div class="cat-list" id="catList"></div>
 
 <div class="sidebar-footer">
-<button class="backup-btn" id="catManageBtn">⚙️ 管理分类</button>
-<button class="backup-btn" id="exportBtn">📥 导出备份</button>
-<button class="backup-btn" id="importBtn">📤 恢复备份</button>
+
+<button class="backup-btn" id="catManageBtn">
+⚙️ 管理分类
+</button>
+
+<button class="backup-btn" id="exportBtn">
+📥 导出备份
+</button>
+
+<button class="backup-btn" id="importBtn">
+📤 恢复备份
+</button>
 
 <div class="storage-bar">
 <div class="storage-fill" id="storageFill"></div>
@@ -44,7 +53,11 @@
 
 <div class="topbar-left">
 
-<button class="menu-btn" id="menuBtn">
+<button
+class="menu-btn"
+id="menuBtn"
+aria-label="打开分类菜单"
+>
 ☰
 </button>
 
@@ -54,26 +67,77 @@
 
 </div>
 
+
 <div class="topbar-actions">
 
-<div class="selection-toolbar" id="selectionToolbar">
+<div
+class="selection-toolbar"
+id="selectionToolbar"
+>
 
 <span id="selectedCount">
 已选择 0 个
 </span>
 
-<button class="toolbar-btn" id="downloadSelectedBtn">
+<button
+class="toolbar-btn"
+id="downloadSelectedBtn"
+>
 ⬇ 批量下载
 </button>
 
-<button class="toolbar-btn cancel-selection-btn" id="clearSelectionBtn">
+<button
+class="toolbar-btn cancel-selection-btn"
+id="clearSelectionBtn"
+>
 取消选择
 </button>
 
 </div>
 
-<button class="upload-btn" id="uploadBtnMain">
-<span>＋</span> 上传视频
+
+<div
+class="view-switcher"
+id="viewSwitcher"
+aria-label="显示方式"
+>
+
+<button
+class="view-btn active"
+data-view="grid"
+title="网格显示"
+>
+▦
+<span>网格</span>
+</button>
+
+<button
+class="view-btn"
+data-view="timeline"
+title="时间轴显示"
+>
+◷
+<span>时间轴</span>
+</button>
+
+<button
+class="view-btn"
+data-view="tags"
+title="标签显示"
+>
+🏷
+<span>标签</span>
+</button>
+
+</div>
+
+
+<button
+class="upload-btn"
+id="uploadBtnMain"
+>
+<span>＋</span>
+上传视频
 </button>
 
 </div>
@@ -81,7 +145,10 @@
 </div>
 
 
-<div class="content" id="content">
+<div
+class="content"
+id="content"
+>
 
 <div class="loading-state">
 正在加载视频库…
@@ -94,20 +161,33 @@
 </div>
 
 
-<div class="sidebar-overlay" id="sidebarOverlay"></div>
+<div
+class="sidebar-overlay"
+id="sidebarOverlay"
+></div>
 
 
-<!-- 上传 -->
+<!-- ==================================================
+     上传
+     ================================================== -->
 
-<div class="modal-overlay" id="uploadModal">
+<div
+class="modal-overlay"
+id="uploadModal"
+>
 
 <div class="modal">
 
 <div class="modal-header">
 
-<h3>📤 上传视频</h3>
+<h3>
+📤 上传视频
+</h3>
 
-<button class="modal-close" data-close="uploadModal">
+<button
+class="modal-close"
+data-close="uploadModal"
+>
 ×
 </button>
 
@@ -115,6 +195,7 @@
 
 
 <div class="modal-body">
+
 
 <div class="form-group">
 
@@ -129,25 +210,51 @@
 
 <div class="form-group">
 
+<label for="uploadTags">
+标签
+</label>
+
+<input
+type="text"
+id="uploadTags"
+maxlength="200"
+placeholder="例如：JavaScript、教程、前端"
+/>
+
+<p class="form-hint">
+多个标签请用逗号分隔。标签属于当前分类。
+</p>
+
+</div>
+
+
+<div class="form-group">
+
 <label>
 选择视频文件
 </label>
 
-<div class="file-drop" id="fileDrop">
+<div
+class="file-drop"
+id="fileDrop"
+>
 
 <div class="drop-icon">
 🎬
 </div>
 
 <p>
-点击或拖拽 MP4 视频到此处
+点击或拖拽视频到此处
 </p>
 
 <p class="drop-hint">
 支持一次选择多个 MP4，原始文件直接保存，不转码、不压缩
 </p>
 
-<div class="file-name" id="fileName"></div>
+<div
+class="file-name"
+id="fileName"
+></div>
 
 </div>
 
@@ -173,14 +280,16 @@ multiple
 
 <button
 class="btn btn-secondary"
-data-close="uploadModal">
+data-close="uploadModal"
+>
 取消
 </button>
 
 <button
 class="btn btn-primary"
 id="uploadConfirmBtn"
-disabled>
+disabled
+>
 上传
 </button>
 
@@ -191,9 +300,14 @@ disabled>
 </div>
 
 
-<!-- 播放器 -->
+<!-- ==================================================
+     播放器
+     ================================================== -->
 
-<div class="modal-overlay" id="playerModal">
+<div
+class="modal-overlay"
+id="playerModal"
+>
 
 <div class="modal player-modal">
 
@@ -205,7 +319,8 @@ disabled>
 
 <button
 class="modal-close"
-data-close="playerModal">
+data-close="playerModal"
+>
 ×
 </button>
 
@@ -218,7 +333,8 @@ data-close="playerModal">
 id="playerVideo"
 controls
 playsinline
-preload="metadata">
+preload="metadata"
+>
 </video>
 
 </div>
@@ -234,11 +350,17 @@ preload="metadata">
 分类 · 大小 · 日期
 </p>
 
+<div
+class="player-tags"
+id="playerTags"
+></div>
+
 <div class="player-actions">
 
 <button
 class="btn btn-primary"
-id="playerDownloadBtn">
+id="playerDownloadBtn"
+>
 ⬇ 下载原文件
 </button>
 
@@ -251,9 +373,14 @@ id="playerDownloadBtn">
 </div>
 
 
-<!-- 添加分类 -->
+<!-- ==================================================
+     添加分类
+     ================================================== -->
 
-<div class="modal-overlay" id="catModal">
+<div
+class="modal-overlay"
+id="catModal"
+>
 
 <div class="modal modal-sm">
 
@@ -265,7 +392,8 @@ id="playerDownloadBtn">
 
 <button
 class="modal-close"
-data-close="catModal">
+data-close="catModal"
+>
 ×
 </button>
 
@@ -296,13 +424,15 @@ placeholder="例如：学习、素材、收藏…"
 
 <button
 class="btn btn-secondary"
-data-close="catModal">
+data-close="catModal"
+>
 取消
 </button>
 
 <button
 class="btn btn-primary"
-id="addCatConfirmBtn">
+id="addCatConfirmBtn"
+>
 添加
 </button>
 
@@ -313,9 +443,14 @@ id="addCatConfirmBtn">
 </div>
 
 
-<!-- 恢复备份 -->
+<!-- ==================================================
+     恢复备份
+     ================================================== -->
 
-<div class="modal-overlay" id="importModal">
+<div
+class="modal-overlay"
+id="importModal"
+>
 
 <div class="modal modal-sm">
 
@@ -327,7 +462,8 @@ id="addCatConfirmBtn">
 
 <button
 class="modal-close"
-data-close="importModal">
+data-close="importModal"
+>
 ×
 </button>
 
@@ -338,7 +474,8 @@ data-close="importModal">
 
 <div
 class="import-drop"
-id="importDrop">
+id="importDrop"
+>
 
 <div class="drop-icon">
 📂
@@ -354,8 +491,8 @@ id="importDrop">
 
 <div
 class="file-name"
-id="importFileName">
-</div>
+id="importFileName"
+></div>
 
 </div>
 
@@ -372,14 +509,16 @@ accept="application/json,.json"
 
 <button
 class="btn btn-secondary"
-data-close="importModal">
+data-close="importModal"
+>
 取消
 </button>
 
 <button
 class="btn btn-primary"
 id="importConfirmBtn"
-disabled>
+disabled
+>
 恢复
 </button>
 
@@ -390,9 +529,14 @@ disabled>
 </div>
 
 
-<!-- 管理分类 -->
+<!-- ==================================================
+     管理分类
+     ================================================== -->
 
-<div class="modal-overlay" id="catManageModal">
+<div
+class="modal-overlay"
+id="catManageModal"
+>
 
 <div class="modal modal-md">
 
@@ -404,22 +548,26 @@ disabled>
 
 <button
 class="modal-close"
-data-close="catManageModal">
+data-close="catManageModal"
+>
 ×
 </button>
 
 </div>
 
+
 <div
 class="modal-body"
-id="catManageBody">
-</div>
+id="catManageBody"
+></div>
+
 
 <div class="modal-footer">
 
 <button
 class="btn btn-secondary"
-data-close="catManageModal">
+data-close="catManageModal"
+>
 关闭
 </button>
 
@@ -430,12 +578,16 @@ data-close="catManageModal">
 </div>
 
 
+<!-- ==================================================
+     Toast
+     ================================================== -->
+
 <div
 class="toast"
 id="toast"
 role="status"
-aria-live="polite">
-</div>
+aria-live="polite"
+></div>
 
 
 <script src="app.js"></script>
