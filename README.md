@@ -619,7 +619,7 @@ IndexedDB 是浏览器本地存储，不是云端数据库。
 
 ---
 
-© 2026 [zilo1002]. All rights reserved.
+© 2026 zilo1002. All rights reserved.
 
 作者不对以下情况造成的数据丢失承担责任：
 
